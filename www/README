@@ -1,0 +1,6 @@
+To compile program type make in the www directory
+
+to run: 
+	./server <port number>
+server should respond with listening on port <port number>
+access files through browser localhost:<portnumber>/<desired file>
