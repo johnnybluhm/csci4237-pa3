@@ -18,17 +18,9 @@
 #define LISTENQ  1024  /* second argument to listen() */
 
 int open_listenfd(int port);
-void echo(int connfd);
 void *thread(void *vargp);
-
-void get_html(int connfd, char *requested_file, int file_size);
-void get_image(int connfd, FILE *requested_file, char *extension);
-void get_css(int connfd, FILE *requested_file, char *extension);
-void get_js(int connfd, FILE *requested_file, char *extension);
-void get_text(int connfd, char *requested_file, int file_size);
-void get_error(int connfd, char * error_msg);
-
 char* itoa(int value, char* result, int base);
+int dnslookup(const char* hostname, char* firstIPstr, int maxSize);
 
 int main(int argc, char **argv) 
 {
@@ -73,216 +65,47 @@ void * thread(void * vargp)
     request_header = (char *)malloc(sizeof(char) *100);
     n = read(connfd, request, MAXLINE);
 
-    //get first line of http request
-    //gives string <request type> </wherever> <HTTP/1.1>
+    if(n< 0){
+        printf("Bad connection\n");
+    }
+
+    //copy packet info before parsing
+    char *http_packet;
+    http_packet = (char *)malloc(sizeof(char) *100);
+    strcpy(http_packet, request);
     
+    //get first line of http request
+    //gives string <request type> </wherever> <HTTP/1.1>    
     request_header = strtok(request, "\n");  
     char *request_header_token;
     request_header_token = (char *)malloc(sizeof(char) *100);
     request_header_token = strtok(request_header," ");
 
-    //parse string further
-    char *get_request;
-    get_request = (char *)malloc(sizeof(char) *100);
-    get_request = strtok(NULL, " ");
+    //nested if to check if GET request 
+    if(strcmp(request_header_token, "GET") == 0){
 
-    //we now have user file request
-    
-    //checks if address has period, if not not valid
-    if(strstr(get_request, ".") != NULL || strcmp(get_request, "/")==0){
+        printf("http packet is \n%s\n",http_packet );
 
-    if(strcmp(get_request,"/socketcluster/")==0){
-        return NULL;
-    }
+        //parse string further
+        char *domain_name;
+        domain_name = (char *)malloc(sizeof(char) *100);
+        domain_name = strtok(NULL, " ");
 
-    //get extension of file
-    char *extension;
-    extension = (char *)malloc(sizeof(char) *100);
-    char *parse;
-    parse = (char *)malloc(sizeof(char) *100);
-    char get_request_copy[MAXBUF];
-    strcpy(get_request_copy, get_request);
+        char resolved_domain;
+        resolved_domain = (char *)malloc(sizeof(char) *100); 
 
-    //get first part of request
-    parse = strtok(get_request_copy, ".");
+        dnslookup(domain_name, resolved_domain, 100);
 
-    
-    if (strcmp(get_request,"/")==0){
-        extension = "html" ;     
-            }//if
-        else{    
-        //get extension
-        extension = strtok(NULL, ".");
-    }//else for extension
+        printf("%s\n",resolved_domain );
 
+    }//nested if
 
-    //handle further parsing when needed
-    if(
-        strcmp(extension,"mousewheel-3") == 0 || 
-        strcmp(extension,"fancybox-1") == 0 || 
-        strcmp(extension,"4") == 0 ||
-        strcmp(extension,"easing-1") == 0
-        )
-    {
-        if(strcmp(get_request,"jquery-fancybox-1.3.4.css") == 0){
-            strcpy(extension, "css");
-        }
-        else if(strcmp(get_request,"jquery.fancybox-1.3.4.pack.js")){            
-            strcpy(extension, "js");
-        }
-        else{
-            strcpy(extension, "js");
-        }
-    }//further parsing
-
-printf("%s has thread id %lu and extension %s \n", get_request, pthread_self, extension);    
-
-    //load index page
-    if(strcmp(get_request, "/")==0){
-        FILE *fp;
-        fp = fopen("index.html", "r");
-        //copy file contents to string file_contents
-        char file_contents[MAXLINE];
-        int i =0;
-        char c;
-        int file_size;
-        c = fgetc(fp);
-        while(c != EOF){
-            file_contents[i] = c;
-            i++;
-            c =fgetc(fp);
-        }    
-        file_size= strlen(file_contents);
-        get_html(connfd, file_contents, file_size);
-    }//if index
-
-    //handle images
-    else if(
-        strcmp(extension,"png") == 0 || 
-        strcmp(extension,"gif") == 0 || 
-        strcmp(extension,"jpg") == 0 ||
-        strcmp(extension,"ico") == 0
-        )
-    {
-        //adds . to files so they can be accessed
-        //explored trying to change cd to root but seems like not necessary   
-        printf("handling image\n"); 
-        char period[MAXBUF];
-        strcpy(period, ".");
-        char get_request_cur_dir[MAXBUF];
-        strcat(period, get_request);
-        strcpy(get_request_cur_dir, period);
-
-
-        printf("%s \n", get_request_cur_dir);
-        //open file in binary mode
-        FILE *fp;
-        fp = fopen(get_request_cur_dir, "rb");
-        if(fp == NULL){
-            printf("File not found!\n");
-            char error_msg[]="File not found!\n";
-            get_error(connfd, error_msg);
-        }
-
-        get_image(connfd, fp, extension);
-        //printf("%s\n",file_contents);*/
-        //get_image(connfd, fp);
-    } //image elif
-
-    //handle html and txt
-    else if (
-        strcmp(extension, "html") == 0 ||
-        strcmp(extension, "html~") == 0 ||
-        strcmp(extension, "txt") == 0
-        )
-    {
-
-        //adds . to files so they can be accessed
-        //explored trying to change cd to root but seems like not necessary
-        char period[MAXBUF];
-        strcpy(period, ".");
-        char get_request_cur_dir[MAXBUF];
-        strcat(period, get_request);
-        strcpy(get_request_cur_dir, period);
-        FILE *fp;
-        fp = fopen(get_request_cur_dir, "r");
-        if(fp == NULL){
-            printf("File not found!\n");
-            char error_msg[]="File not found!\n";
-            get_error(connfd, error_msg);
-        }
-
-        //copy file contents to string file_contents
-        char file_contents[MAXLINE];
-        int i =0;
-        char c;
-        c = fgetc(fp);
-        while(c != EOF){
-            file_contents[i] = c;
-            i++;
-            c =fgetc(fp);
-        }
-        int file_size;
-        file_size= strlen(file_contents);
-        
-        if(strcmp(extension,"txt")==0){
-            get_text(connfd, file_contents, file_size);
-        }
-        else{
-            get_html(connfd, file_contents, file_size);
-        }        
-   }//else if html
-
-//handle js and css
-    else if(
-        strcmp(extension,"js") == 0 || 
-        strcmp(extension,"css") == 0
-        )
-    {
-
-        //adds . to files so they can be accessed
-        //explored trying to change cd to root but seems like not necessary
-        char period[MAXBUF];
-        strcpy(period, ".");
-        char get_request_cur_dir[MAXBUF];
-        strcat(period, get_request);
-        strcpy(get_request_cur_dir, period);
-        
-        FILE *fp;
-        fp = fopen(get_request_cur_dir, "r");
-        
-        if(fp == NULL){
-            printf("File not found!\n");
-            return NULL;
-        }
-
-       
-        if(strcmp(extension,"js") == 0){        
-            get_js(connfd, fp, extension);
-        }
-        else{
-            get_css(connfd, fp,extension);
-        }
-
-    }//js and css elif
-    else if(extension == NULL){
-        char error_msg[]="File extension was NULL";
-        get_error(connfd, error_msg);
-    }
+    //not a GET request, bye
     else{
-        char error_msg[]="File extension was not recognized";
-        get_error(connfd, error_msg);
-    }    
-    close(connfd);
-    return NULL;
-
-}//nested if
-else{
-    char error_msg[]="File was not recognized";
-    get_error(connfd, error_msg);
-}
-
-}//thread
+        printf("Proxy only handles GET. Sorry\n");
+        return NULL;
+    }//terminating else
+  }//thread  
 
 /*
 
@@ -295,204 +118,16 @@ HELPER FUNCTIONS BELOW
 
 
  */
-void get_html(int connfd, char *requested_file, int file_size) 
-{    
-    char buf[MAXLINE]; 
-    char httpmsg[]="HTTP/1.1 200 Document Follows\r\nContent-Type:text/html\r\nContent-Length:";
-    char after_content_length[]="\r\n\r\n";
-    char content_length[MAXLINE];
-    
-    //convert file size int to string
-    itoa(file_size, content_length, 10);
-    
-    strcat(httpmsg, content_length);
-    strcat(httpmsg, after_content_length);   
 
-    //add file contents to http header
-    strcat(httpmsg, requested_file);
-    //printf("server returning a http message with the following content.\n%s\n",httpmsg);
-    write(connfd, httpmsg,strlen(httpmsg));
-    
-}
-void get_text(int connfd, char *requested_file, int file_size) 
-{    
-    char buf[MAXLINE]; 
-    char httpmsg[]="HTTP/1.1 200 Document Follows\r\nContent-Type:text/plain\r\nContent-Length:";
-    char after_content_length[]="\r\n\r\n";
-    char content_length[MAXLINE];
-    
-    //convert file size int to string
-    itoa(file_size, content_length, 10);
-    
-    strcat(httpmsg, content_length);
-    strcat(httpmsg, after_content_length);
-    
+int send_packet_to_internet(char* http_packet, char* domain_name){
 
-    //add file contents to http header
-    strcat(httpmsg, requested_file);
-    //printf("server returning a http message with the following content.\n%s\n",httpmsg);
-    write(connfd, httpmsg,strlen(httpmsg));
-    
+
+
+
 }
 
-//source: https://stackoverflow.com/questions/15445207/sending-image-jpeg-through-socket-in-c-linux
-void get_image(int connfd, FILE *requested_file, char *extension) 
-{   
-    if(requested_file == NULL){
 
-    }
-    else{
-    char *sendbuf;
-    int file_size;
-    char *binary_data;
-    char buf[MAXLINE]; 
-    char httpmsg[]="HTTP/1.1 200 Document Follows\r\nContent-Type:image/";
-    char after_extension[] = "\r\nContent-Length:";
 
-    //add type of image
-    strcat(httpmsg, extension);
-    strcat(httpmsg, after_extension);
-    
-    char after_content_length[]="\r\n\r";
-    char content_length[MAXLINE];
-    
-    fseek (requested_file, 0, SEEK_END);
-
-    file_size = ftell(requested_file);
-    rewind(requested_file);         
-    sendbuf = (char*) malloc (sizeof(char)*file_size);
-    size_t result = fread(sendbuf, 1, file_size, requested_file);
-
-    //convert file size int to string
-    itoa(file_size, content_length, 10);
-    
-    strcat(httpmsg, content_length);
-    strcat(httpmsg, after_content_length);
-    strcat (httpmsg, "Connection: keep-alive\r\n\r\n");
-
-    //send http header
-    write(connfd, httpmsg,strlen(httpmsg));
-
-    int buf_index = 0;
-    int packets = file_size / MAXBUF;
-    
-    //send binary data
-    write(connfd, sendbuf, file_size);
-    }//else
-}
-void get_js(int connfd, FILE *requested_file, char *extension) 
-{   
-    if(requested_file == NULL){
-
-    }
-    else{
-    char *sendbuf;
-    int file_size;
-    char *binary_data;
-    char buf[MAXLINE]; 
-    char httpmsg[]="HTTP/1.1 200 Document Follows\r\nContent-Type:application/";
-    char after_extension[] = "\r\nContent-Length:";
-
-    //add js
-    strcat(httpmsg, extension);
-    strcat(httpmsg, after_extension);
-    
-    char after_content_length[]="\r\n\r";
-    char content_length[MAXLINE];
-    
-    fseek (requested_file, 0, SEEK_END);
-
-    file_size = ftell(requested_file);
-    rewind(requested_file);         
-    sendbuf = (char*) malloc (sizeof(char)*file_size);
-    size_t result = fread(sendbuf, 1, file_size, requested_file);
-
-    //convert file size int to string
-    itoa(file_size, content_length, 10);
-    
-    strcat(httpmsg, content_length);
-    strcat(httpmsg, after_content_length);
-    strcat (httpmsg, "Connection: keep-alive\r\n\r\n");
-
-    //send http header
-    write(connfd, httpmsg,strlen(httpmsg));
-
-    int buf_index = 0;
-    int packets = file_size / MAXBUF;
-    
-    //send data
-    write(connfd, sendbuf, file_size);    
-    }//else
-}//get js
-
-void get_css(int connfd, FILE *requested_file, char *extension) 
-{  
-    if(requested_file == NULL){
-
-    }
-    else{ 
-    char *sendbuf;
-    int file_size;
-    char *binary_data;
-    char buf[MAXLINE]; 
-    char httpmsg[]="HTTP/1.1 200 Document Follows\r\nContent-Type:text/";
-    char after_extension[] = "\r\nContent-Length:";
-
-    //add css
-    strcat(httpmsg, extension);
-    strcat(httpmsg, after_extension);
-    
-    char after_content_length[]="\r\n\r";
-    char content_length[MAXLINE];
-    
-    fseek (requested_file, 0, SEEK_END);
-
-    file_size = ftell(requested_file);
-    rewind(requested_file);         
-    sendbuf = (char*) malloc (sizeof(char)*file_size);
-    size_t result = fread(sendbuf, 1, file_size, requested_file);
-
-    //convert file size int to string
-    itoa(file_size, content_length, 10);
-    
-    strcat(httpmsg, content_length);
-    strcat(httpmsg, after_content_length);
-    strcat (httpmsg, "Connection: keep-alive\r\n\r\n");
-
-    //send http header
-    write(connfd, httpmsg,strlen(httpmsg));
-
-    int buf_index = 0;
-    int packets = file_size / MAXBUF;
-    
-    //send binary data
-    write(connfd, sendbuf, file_size);    
-    }//else
-}//get css
-void get_error(int connfd, char * error_msg)
-{
-
-    char buf[MAXLINE]; 
-    char httpmsg[]="HTTP/1.1 500 Internal Server Error\r\nContent-Type:text/plain\r\nContent-Length:";
-    char after_content_length[]="\r\n\r\n";
-    char content_length[MAXLINE];
-    
-    //convert file size int to string
-    itoa(strlen(error_msg), content_length, 10);
-    
-    strcat(httpmsg, content_length);
-    strcat(httpmsg, after_content_length);    
-
-    //add file contents to http header
-    strcat(httpmsg, error_msg);
-    //printf("server returning a http message with the following content.\n%s\n",httpmsg);
-    write(connfd, httpmsg,strlen(httpmsg));
-    
-}
-/* 
- * open_listenfd - open and return a listening socket on port
- * Returns -1 in case of failure 
- */
 int open_listenfd(int port) 
 {
     int listenfd, optval=1;
@@ -521,6 +156,35 @@ int open_listenfd(int port)
         return -1;
     return listenfd;
 } /* end open_listenfd */
+
+
+int socket_connect(char *host, in_port_t port){
+    struct hostent *hp;
+    struct sockaddr_in addr;
+    int on = 1, sock;     
+
+    if((hp = gethostbyname(host)) == NULL){
+        herror("gethostbyname");
+        exit(1);
+    }
+    copy(hp->h_addr, &addr.sin_addr, hp->h_length);
+    addr.sin_port = htons(port);
+    addr.sin_family = AF_INET;
+    sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (const char *)&on, sizeof(int));
+
+    if(sock == -1){
+        perror("setsockopt");
+        exit(1);
+    }
+    
+    if(connect(sock, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) == -1){
+        perror("connect");
+        exit(1);
+
+    }
+    return sock;
+}
 
 //function to convert into to string
 //source:https://stackoverflow.com/questions/8257714/how-to-convert-an-int-to-string-in-c/23840699#:~:text=You%20can%20use%20itoa(),to%20convert%20any%20value%20beforehand.
@@ -552,3 +216,74 @@ char* itoa(int value, char* result, int base) {
     }
     return result;
 }
+
+//from operating systems PA3
+int dnslookup(const char* hostname, char* firstIPstr, int maxSize){
+
+    /* Local vars */
+    struct addrinfo* headresult = NULL;
+    struct addrinfo* result = NULL;
+    struct sockaddr_in* ipv4sock = NULL;
+    struct in_addr* ipv4addr = NULL;
+    char ipv4str[INET_ADDRSTRLEN];
+    char ipstr[INET6_ADDRSTRLEN];
+    int addrError = 0;
+
+    /* DEBUG: Print Hostname*/
+#ifdef UTIL_DEBUG
+    fprintf(stderr, "%s\n", hostname);
+#endif
+   
+    /* Lookup Hostname */
+    addrError = getaddrinfo(hostname, NULL, NULL, &headresult);
+    if(addrError){
+    fprintf(stderr, "Error looking up Address: %s\n",
+        gai_strerror(addrError));
+    return UTIL_FAILURE;
+    }
+    /* Loop Through result Linked List */
+    for(result=headresult; result != NULL; result = result->ai_next){
+    /* Extract IP Address and Convert to String */
+    if(result->ai_addr->sa_family == AF_INET){
+        /* IPv4 Address Handling */
+        ipv4sock = (struct sockaddr_in*)(result->ai_addr);
+        ipv4addr = &(ipv4sock->sin_addr);
+        if(!inet_ntop(result->ai_family, ipv4addr,
+              ipv4str, sizeof(ipv4str))){
+        perror("Error Converting IP to String");
+        return UTIL_FAILURE;
+        }
+#ifdef UTIL_DEBUG
+        fprintf(stdout, "%s\n", ipv4str);
+#endif
+        strncpy(ipstr, ipv4str, sizeof(ipstr));
+        ipstr[sizeof(ipstr)-1] = '\0';
+    }
+    else if(result->ai_addr->sa_family == AF_INET6){
+        /* IPv6 Handling */
+#ifdef UTIL_DEBUG
+        fprintf(stdout, "IPv6 Address: Not Handled\n");
+#endif
+        strncpy(ipstr, "UNHANDELED", sizeof(ipstr));
+        ipstr[sizeof(ipstr)-1] = '\0';
+    }
+    else{
+        /* Unhandlded Protocol Handling */
+#ifdef UTIL_DEBUG
+        fprintf(stdout, "Unknown Protocol: Not Handled\n");
+#endif
+        strncpy(ipstr, "UNHANDELED", sizeof(ipstr));
+        ipstr[sizeof(ipstr)-1] = '\0';
+    }
+    /* Save First IP Address */
+    if(result==headresult){
+        strncpy(firstIPstr, ipstr, maxSize);
+        firstIPstr[maxSize-1] = '\0';
+    }
+    }
+
+    /* Cleanup */
+    freeaddrinfo(headresult);
+
+    return UTIL_SUCCESS;
+}//dns lookup
