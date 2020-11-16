@@ -185,8 +185,15 @@ void * thread(void * vargp)
             printf("resolved from file is %s\n", resolved_name);
             fclose(thread_object->cached);
             pthread_mutex_unlock(thread_object->file_lock);
-            
+
         }
+
+
+        //DONE WITH DNS CACHE
+    
+
+
+
         return NULL;
     }//nested if
 
@@ -209,9 +216,20 @@ HELPER FUNCTIONS BELOW
 
  */
 
-int send_packet_to_internet(char* http_packet, char* domain_name){
+int create_send_socket(char* ip_add)
+{
 
-}
+    struct sockaddr_in serv_addr;
+    int sock = 0, valread;
+
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
+    { 
+        printf("\n Socket creation error \n"); 
+        return -1; 
+    }//if
+    
+
+}//create_send_socket
 
 
 
@@ -245,6 +263,7 @@ int open_listenfd(int port)
 } /* end open_listenfd */
 
 
+
 /*int socket_connect(char *host, in_port_t port){
     struct hostent *hp;
     struct sockaddr_in addr;
@@ -272,78 +291,6 @@ int open_listenfd(int port)
     }
     return sock;
 }*/
-
-//https://www.binarytides.com/hostname-to-ip-address-c-sockets-linux/
-int dnslookup(const char* hostname, char* firstIPstr, int maxSize){
-
-    /* Local vars */
-    struct addrinfo* headresult = NULL;
-    struct addrinfo* result = NULL;
-    struct sockaddr_in* ipv4sock = NULL;
-    struct in_addr* ipv4addr = NULL;
-    char ipv4str[INET_ADDRSTRLEN];
-    char ipstr[INET6_ADDRSTRLEN];
-    int addrError = 0;
-
-    /* DEBUG: Print Hostname*/
-#ifdef UTIL_DEBUG
-    fprintf(stderr, "%s\n", hostname);
-#endif
-   
-    /* Lookup Hostname */
-    addrError = getaddrinfo(hostname, NULL, NULL, &headresult);
-    if(addrError){
-    fprintf(stderr, "Error looking up Address: %s\n",
-        gai_strerror(addrError));
-    return UTIL_FAILURE;
-    }
-    /* Loop Through result Linked List */
-    for(result=headresult; result != NULL; result = result->ai_next){
-    /* Extract IP Address and Convert to String */
-    if(result->ai_addr->sa_family == AF_INET){
-        /* IPv4 Address Handling */
-        ipv4sock = (struct sockaddr_in*)(result->ai_addr);
-        ipv4addr = &(ipv4sock->sin_addr);
-        if(!inet_ntop(result->ai_family, ipv4addr,
-              ipv4str, sizeof(ipv4str))){
-        perror("Error Converting IP to String");
-        return UTIL_FAILURE;
-        }
-#ifdef UTIL_DEBUG
-        fprintf(stdout, "%s\n", ipv4str);
-#endif
-        strncpy(ipstr, ipv4str, sizeof(ipstr));
-        ipstr[sizeof(ipstr)-1] = '\0';
-    }
-    else if(result->ai_addr->sa_family == AF_INET6){
-        /* IPv6 Handling */
-#ifdef UTIL_DEBUG
-        fprintf(stdout, "IPv6 Address: Not Handled\n");
-#endif
-        strncpy(ipstr, "UNHANDELED", sizeof(ipstr));
-        ipstr[sizeof(ipstr)-1] = '\0';
-    }
-    else{
-        /* Unhandlded Protocol Handling */
-#ifdef UTIL_DEBUG
-        fprintf(stdout, "Unknown Protocol: Not Handled\n");
-#endif
-        strncpy(ipstr, "UNHANDELED", sizeof(ipstr));
-        ipstr[sizeof(ipstr)-1] = '\0';
-    }
-    /* Save First IP Address */
-    if(result==headresult){
-        strncpy(firstIPstr, ipstr, maxSize);
-        firstIPstr[maxSize-1] = '\0';
-    }
-    }
-
-    /* Cleanup */
-    freeaddrinfo(headresult);
-
-    return UTIL_SUCCESS;
-}//dns lookup
-
 
 //https://www.binarytides.com/hostname-to-ip-address-c-sockets-linux/
 int hostname_to_ip(char *hostname , char *ip)
