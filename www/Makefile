@@ -4,7 +4,7 @@ build_server:
 	@echo "Building server"
 
 create_server:
-	@gcc -Wall -Wextra -pthread -o  server httpechosrv.c
+	@gcc -Wall -Wextra -pthread -o  proxy proxy.c
 
 server_clean:
 	@echo "Server built"

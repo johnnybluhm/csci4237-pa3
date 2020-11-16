@@ -1,7 +1,3 @@
-/* 
- * tcpechosrv.c - A concurrent TCP echo server using threads
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>      /* for fgets */
@@ -13,10 +9,6 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 
-//from PA3 operating systems
-#define UTIL_FAILURE -1
-#define UTIL_SUCCESS 0
-
 #define MAXLINE  8192  /* max text line length */
 #define MAXBUF   8192  /* max I/O buffer size */
 #define LISTENQ  1024  /* second argument to listen() */
@@ -24,12 +16,15 @@
 int open_listenfd(int port);
 void *thread(void *vargp);
 char* itoa(int value, char* result, int base);
-int hostname_to_ip(char* hostname , char* ip);
+int dnslookup(const char* hostname, char* firstIPstr, int maxSize);
 
 struct Thread_object{
     int* connfdp;
     char* ip_addr;
 };
+
+#define UTIL_FAILURE -1
+#define UTIL_SUCCESS 0
 
 char global_string[100];
 char global_google[100] = "google.com";
@@ -47,7 +42,7 @@ int main(int argc, char **argv)
 
     listenfd = open_listenfd(port);
     printf("listening on port %d\n", port);
-    hostname_to_ip(global_google, global_string);
+    int dnslookup(global_google,global_string,1000)
     printf("%s\n",global_string );
 
   /*  while (1) {    
@@ -117,11 +112,10 @@ void * thread(void * vargp)
         domain_name = (char *)malloc(sizeof(char) *100);
         domain_name = strtok(NULL, " ");
 
+        getaddrinfo(domain_name, NULL, NULL, &headresult);
+
         printf("%s\n",domain_name );
-        
-        
-        //resolved_domain = (char *)malloc(sizeof(char) *100); 
-        hostname_to_ip(global_google, global_string);
+
         return NULL;
     }//nested if
 
@@ -145,9 +139,6 @@ HELPER FUNCTIONS BELOW
  */
 
 int send_packet_to_internet(char* http_packet, char* domain_name){
-
-
-
 
 }
 
@@ -212,30 +203,72 @@ int open_listenfd(int port)
 }*/
 
 //https://www.binarytides.com/hostname-to-ip-address-c-sockets-linux/
-int hostname_to_ip(char *hostname , char *ip)
-{
-    int sockfd;  
-    struct addrinfo hints, *servinfo, *p;
-    struct sockaddr_in *h;
-    int rv;
+int dnslookup(const char* hostname, char* firstIPstr, int maxSize){
 
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC; // use AF_INET6 to force IPv6
-    hints.ai_socktype = SOCK_STREAM;
+    /* Local vars */
+    struct addrinfo* headresult = NULL;
+    struct addrinfo* result = NULL;
+    struct sockaddr_in* ipv4sock = NULL;
+    struct in_addr* ipv4addr = NULL;
+    char ipv4str[INET_ADDRSTRLEN];
+    char ipstr[INET6_ADDRSTRLEN];
+    int addrError = 0;
 
-    if ( (rv = getaddrinfo( hostname , "http" , &hints , &servinfo)) != 0) 
-    {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-        return 1;
+    /* DEBUG: Print Hostname*/
+#ifdef UTIL_DEBUG
+    fprintf(stderr, "%s\n", hostname);
+#endif
+   
+    /* Lookup Hostname */
+    addrError = getaddrinfo(hostname, NULL, NULL, &headresult);
+    if(addrError){
+    fprintf(stderr, "Error looking up Address: %s\n",
+        gai_strerror(addrError));
+    return UTIL_FAILURE;
+    }
+    /* Loop Through result Linked List */
+    for(result=headresult; result != NULL; result = result->ai_next){
+    /* Extract IP Address and Convert to String */
+    if(result->ai_addr->sa_family == AF_INET){
+        /* IPv4 Address Handling */
+        ipv4sock = (struct sockaddr_in*)(result->ai_addr);
+        ipv4addr = &(ipv4sock->sin_addr);
+        if(!inet_ntop(result->ai_family, ipv4addr,
+              ipv4str, sizeof(ipv4str))){
+        perror("Error Converting IP to String");
+        return UTIL_FAILURE;
+        }
+#ifdef UTIL_DEBUG
+        fprintf(stdout, "%s\n", ipv4str);
+#endif
+        strncpy(ipstr, ipv4str, sizeof(ipstr));
+        ipstr[sizeof(ipstr)-1] = '\0';
+    }
+    else if(result->ai_addr->sa_family == AF_INET6){
+        /* IPv6 Handling */
+#ifdef UTIL_DEBUG
+        fprintf(stdout, "IPv6 Address: Not Handled\n");
+#endif
+        strncpy(ipstr, "UNHANDELED", sizeof(ipstr));
+        ipstr[sizeof(ipstr)-1] = '\0';
+    }
+    else{
+        /* Unhandlded Protocol Handling */
+#ifdef UTIL_DEBUG
+        fprintf(stdout, "Unknown Protocol: Not Handled\n");
+#endif
+        strncpy(ipstr, "UNHANDELED", sizeof(ipstr));
+        ipstr[sizeof(ipstr)-1] = '\0';
+    }
+    /* Save First IP Address */
+    if(result==headresult){
+        strncpy(firstIPstr, ipstr, maxSize);
+        firstIPstr[maxSize-1] = '\0';
+    }
     }
 
-    // loop through all the results and connect to the first we can
-    for(p = servinfo; p != NULL; p = p->ai_next) 
-    {
-        h = (struct sockaddr_in *) p->ai_addr;
-        strcpy(ip , inet_ntoa( h->sin_addr ) );
-    }
-    
-    freeaddrinfo(servinfo); // all done with this structure
-    return 0;
-}
+    /* Cleanup */
+    freeaddrinfo(headresult);
+
+    return UTIL_SUCCESS;
+}//dns lookup
