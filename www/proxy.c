@@ -19,7 +19,7 @@ char* itoa(int value, char* result, int base);
 int dnslookup(const char* hostname, char* firstIPstr, int maxSize);
 void * test(void * vargp);
 int hostname_to_ip(char *hostname , char *ip);
-
+int build_server_addr(struct sockaddr_in* serv_addr, char * ip_add);
 struct Thread_object{
     FILE* cached;
     pthread_mutex_t* file_lock;
@@ -135,6 +135,7 @@ void * thread(void * vargp)
     char* request_header_token = malloc(sizeof(char) *MAXBUF);
     char* domain_name = malloc(sizeof(char)*MAXBUF);
     char* host_name = malloc(sizeof(char)*MAXBUF);
+    char* http_response = malloc(sizeof(char)*10000000);
 
     n = read(connfd, request, MAXLINE);
 
@@ -190,11 +191,49 @@ void * thread(void * vargp)
 
 
         //DONE WITH DNS CACHE
-    
+        
+        struct sockaddr_in* serv_addr = malloc(sizeof(struct sockaddr_in));
+        int* sock = malloc(sizeof(int));
+        *sock = 0;
+        int* check_addr = malloc(sizeof(int));
 
+        //takes pointer to sockaddr_in and ip_addr as string
+        *check_addr = build_server_addr(serv_addr, resolved_name);
 
+        if(*check_addr < 0){
+            printf("Error building address\n");
+            return -1;
+        }
+        else{
+            if((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
+            { 
+                printf("\n Socket creation error \n"); 
+                return -1; 
+            } 
+            if(connect(sock, (struct sockaddr *)serv_addr, sizeof(struct sockaddr_in)) < 0) 
+                { 
+                    printf("\nConnection Failed \n"); 
+                    return -1; 
+                }
+            int* n =malloc(sizeof(int));
+            *n = write(sock, http_packet, sizeof(char)*strlen(http_packet));
+            if(n<0){
+                printf("Error writing\n");
+                return -1;
+            }
+            printf("wrote %d bytes\n",*n);
+            int* ret =malloc(sizeof(int));
 
-        return NULL;
+            while(*ret = read(sock, http_response, sizeof(char)*MAXBUF) >0){
+                printf("read %d bytes",*ret);
+                printf("%s\n",http_response);
+                bzero(http_response, sizeof(char)*MAXBUF);
+            }//while
+            printf("read %d bytes\n",*ret);
+            printf("http respnse was %s\n",http_response);
+            return NULL;        
+    }//if address was built right else
+
     }//nested if
 
     //not a GET request, bye
@@ -216,7 +255,23 @@ HELPER FUNCTIONS BELOW
 
  */
 
-int create_send_socket(char* ip_add)
+int build_server_addr(struct sockaddr_in* serv_addr, char * ip_add){
+    printf("Building address\n");
+    serv_addr->sin_family = AF_INET;
+    serv_addr->sin_port = htons(80);
+
+    //https://www.gta.ufrj.br/ensino/eel878/sockets/sockaddr_inman.html
+    //converts IP to correct format
+    if(inet_aton(ip_add, &serv_addr->sin_addr.s_addr) ==0){
+        return -1;
+    }
+
+}
+
+
+//https://www.geeksforgeeks.org/socket-programming-cc/
+//creates socket to send stuff over internet. 
+/*int create_send_socket(char* ip_add, char* http_packet)
 {
 
     struct sockaddr_in serv_addr;
@@ -227,9 +282,21 @@ int create_send_socket(char* ip_add)
         printf("\n Socket creation error \n"); 
         return -1; 
     }//if
-    
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(80);
 
-}//create_send_socket
+    //https://www.gta.ufrj.br/ensino/eel878/sockets/sockaddr_inman.html
+    //converts IP to correct format
+    inet_aton(ip_add, &serv_addr.sin_addr.s_addr);
+
+    if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(struct sockaddr_in)) < 0){
+        printf("\nConnection failed\n");
+        return -1;
+
+    }
+
+
+}//create_send_socket*/
 
 
 
