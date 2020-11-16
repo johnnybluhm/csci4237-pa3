@@ -69,8 +69,8 @@ int main(int argc, char **argv)
     while (1) {    
     connfdp = malloc(sizeof(int));
     thread_object.connfdp = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
-    pthread_create(&tid, NULL, thread, (void *)&thread_object);
-    //pthread_create(&tid, NULL, test, (void *)&thread_object);
+    //pthread_create(&tid, NULL, thread, (void *)&thread_object);
+    pthread_create(&tid, NULL, test, (void *)&thread_object);
     }
 }
 
@@ -107,15 +107,13 @@ void * test(void * vargp)
     pthread_detach(pthread_self()); 
     size_t n;
 
-    char* resolved_name = malloc(sizeof(char)*100);
-    char* domain_name =malloc(sizeof(char)*100);
-    strcpy(domain_name, "google.com");
-    hostname_to_ip(domain_name, resolved_name);
-    printf("%s\n",resolved_name);
+    char* resolved_name = malloc(sizeof(char)*MAXBUF);
+    resolved_name = "HTTP/1.1 500 Internal Server Error\r\nContent-Type:text/plain\r\nContent-Length:10\r\n\r\n<p>Does this print</p>";
 
-
+    write(connfd, resolved_name, sizeof(char)*strlen(resolved_name));
 
 }
+
 /* thread routine */
 void * thread(void * vargp) 
 {  
@@ -135,7 +133,7 @@ void * thread(void * vargp)
     char* request_header_token = malloc(sizeof(char) *MAXBUF);
     char* domain_name = malloc(sizeof(char)*MAXBUF);
     char* host_name = malloc(sizeof(char)*MAXBUF);
-    char* http_response = malloc(sizeof(char)*10000000);
+    char* http_response = malloc(sizeof(char)*MAXBUF);
 
     n = read(connfd, request, MAXLINE);
 
@@ -224,13 +222,14 @@ void * thread(void * vargp)
             printf("wrote %d bytes\n",*n);
             int* ret =malloc(sizeof(int));
 
-            while(*ret = read(sock, http_response, sizeof(char)*MAXBUF) >0){
-                printf("read %d bytes",*ret);
+            while(*ret = read(sock, http_response, sizeof(char)*strlen(http_response)) >0){
                 printf("%s\n",http_response);
+                
                 bzero(http_response, sizeof(char)*MAXBUF);
             }//while
             printf("read %d bytes\n",*ret);
-            printf("http respnse was %s\n",http_response);
+            printf("http respnse was \n%s\n",http_response);
+            //write(connfd, http_response, sizeof(char)*strlen(http_response));
             return NULL;        
     }//if address was built right else
 
