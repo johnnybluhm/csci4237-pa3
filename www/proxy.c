@@ -20,7 +20,11 @@ int dnslookup(const char* hostname, char* firstIPstr, int maxSize);
 void * test(void * vargp);
 int hostname_to_ip(char *hostname , char *ip);
 
-pthread_mutex_t* file_lock;
+struct Thread_object{
+    FILE* cached;
+    pthread_mutex_t* file_lock;
+    int* connfdp;
+};
 
 #define UTIL_FAILURE -1
 #define UTIL_SUCCESS 0
@@ -30,8 +34,15 @@ int main(int argc, char **argv)
     int listenfd, *connfdp, port, clientlen=sizeof(struct sockaddr_in);
     struct sockaddr_in clientaddr;
     pthread_t tid; 
-    
+    pthread_mutex_t* file_lock;
+    FILE *cached;
     file_lock = malloc(sizeof(pthread_mutex_t));
+
+   /* cached = fopen("cached_domains.txt", "w");
+    if(cached == NULL){
+        printf("File not found!\n");
+    }*/
+
     //initialize file_lock
     if (pthread_mutex_init(file_lock, NULL) != 0) { 
         printf("\n mutex init has failed\n"); 
@@ -45,12 +56,42 @@ int main(int argc, char **argv)
     port = atoi(argv[1]);
 
     listenfd = open_listenfd(port);
+
+    //initialize thread_object
+    struct Thread_object thread_object;
+    thread_object.file_lock = file_lock;
+    //thread_object.cached = cached;
+
+    thread_object.cached = fopen("cached_domains.txt", "wa");
+    fputs("htrifdjkfdshfdkjshkjte?\n", thread_object.cached);
+    fputs("RUNFDBGHJBGDJH12kjte?\n", thread_object.cached);
+    fclose(thread_object.cached);
+   /* thread_object.cached = fopen("cached_domains.txt", "wa");
+    fseek(thread_object.cached, 0, SEEK_END);
+    fputs("Hey testjfkljlking", thread_object.cached);
+    fclose(thread_object.cached);*/
+    
+    printf("cached file is %s\n",thread_object.cached );
     printf("listening on port %d\n", port);
+    while (1) {    
+    connfdp = malloc(sizeof(int));
+    thread_object.connfdp = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
+    pthread_create(&tid, NULL, thread, (void *)&thread_object);
+    //pthread_create(&tid, NULL, test, (void *)&thread_object);
+    }
+}
+
+
+
+
+
+
+   /* 
     char * resolved_name = malloc(sizeof(char)*MAXBUF);
     hostname_to_ip("google.com", resolved_name);
     printf("%s\n",resolved_name );
 
-  /*  while (1) {    
+   while (1) {    
     //prepare thread object to be sent to thread
     struct Thread_object thread_obj;
     thread_obj.ip_addr = (char *)malloc(sizeof(char) *100);
@@ -59,18 +100,17 @@ int main(int argc, char **argv)
 
     pthread_create(&tid, NULL, thread, (void *)&thread_obj);
     }*/
-    while (1) {    
-	connfdp = malloc(sizeof(int));
-	*connfdp = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
-	pthread_create(&tid, NULL, thread, connfdp);
-    //pthread_create(&tid, NULL, test, connfdp);
-    }
-}
+
 
 void * test(void * vargp) 
 {  
-    int connfd = *((int *)vargp);
-    free(vargp);
+
+    struct Thread_object *thread_object;
+    thread_object = vargp;
+
+    int connfd = thread_object->connfdp;
+
+    
     pthread_detach(pthread_self()); 
     size_t n;
 
@@ -81,15 +121,20 @@ void * test(void * vargp)
     printf("%s\n",resolved_name);
 
 
+
 }
 /* thread routine */
 void * thread(void * vargp) 
 {  
-    int connfd = *((int *)vargp);
-    free(vargp);
+    struct Thread_object *thread_object;
+    thread_object = vargp;
+
+    int connfd = thread_object->connfdp;
     pthread_detach(pthread_self()); 
     size_t n;
+    printf("cached file is %s \n",thread_object->cached );
 
+    fputs("HEY FDUCK YOU", thread_object->cached);
     //various string vars needed. All declared with malloc so they go on heap. 
     char* ip_add = malloc(sizeof(char)*MAXBUF);
     char* resolved_name = malloc(sizeof(char)*MAXBUF);  
@@ -100,17 +145,6 @@ void * thread(void * vargp)
     char* domain_name = malloc(sizeof(char)*MAXBUF);
     char* host_name = malloc(sizeof(char)*MAXBUF);
 
-    FILE *fp;
-
-//---------------critical section --------------------
-    pthread_mutex_lock(file_lock);
-    fp = fopen("cached_domains","wa");
-
-    if(fp == NULL){
-        printf("File not found!\n");
-    }
-    pthread_mutex_unlock(file_lock);
-//------------critical section --------------------
     n = read(connfd, request, MAXLINE);
 
     if(n < 0){
@@ -135,18 +169,18 @@ void * thread(void * vargp)
         if(dns_ret == 0 ){
             printf("writing to file\n");
 //---------------critical section --------------------
-//
-            pthread_mutex_lock(file_lock);
-            fputs(host_name, fp);
-            fputs(",", fp);
-            fputs(resolved_name, fp);
 
-            pthread_mutex_unlock(file_lock);
+            pthread_mutex_lock(thread_object->file_lock);
+
+            fputs(host_name, thread_object->cached);
+            fputs(",", thread_object->cached);
+            fputs(resolved_name, thread_object->cached);
+            fputs("\n", thread_object->cached);
+
+            pthread_mutex_unlock(thread_object->file_lock);
 //---------------critical section --------------------
         }
         printf("%s\n",resolved_name );
-
-        fclose(fp);
 
         return NULL;
     }//nested if
