@@ -17,22 +17,26 @@ int open_listenfd(int port);
 void *thread(void *vargp);
 char* itoa(int value, char* result, int base);
 int dnslookup(const char* hostname, char* firstIPstr, int maxSize);
+void * test(void * vargp);
+int hostname_to_ip(char *hostname , char *ip);
 
-struct Thread_object{
-    int* connfdp;
-    char* ip_addr;
-};
+pthread_mutex_t* file_lock;
 
 #define UTIL_FAILURE -1
 #define UTIL_SUCCESS 0
 
-char global_string[100];
-char global_google[100] = "google.com";
 int main(int argc, char **argv) 
 {
     int listenfd, *connfdp, port, clientlen=sizeof(struct sockaddr_in);
     struct sockaddr_in clientaddr;
     pthread_t tid; 
+    
+    file_lock = malloc(sizeof(pthread_mutex_t));
+    //initialize file_lock
+    if (pthread_mutex_init(file_lock, NULL) != 0) { 
+        printf("\n mutex init has failed\n"); 
+        return 1; 
+    } 
 
     if (argc != 2) {
 	fprintf(stderr, "usage: %s <port>\n", argv[0]);
@@ -42,8 +46,9 @@ int main(int argc, char **argv)
 
     listenfd = open_listenfd(port);
     printf("listening on port %d\n", port);
-    int dnslookup(global_google,global_string,1000)
-    printf("%s\n",global_string );
+    char * resolved_name = malloc(sizeof(char)*MAXBUF);
+    hostname_to_ip("google.com", resolved_name);
+    printf("%s\n",resolved_name );
 
   /*  while (1) {    
     //prepare thread object to be sent to thread
@@ -54,67 +59,94 @@ int main(int argc, char **argv)
 
     pthread_create(&tid, NULL, thread, (void *)&thread_obj);
     }*/
-    printf("global_google outside thread address %p\n", &global_string );
     while (1) {    
 	connfdp = malloc(sizeof(int));
 	*connfdp = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
 	pthread_create(&tid, NULL, thread, connfdp);
+    //pthread_create(&tid, NULL, test, connfdp);
     }
 }
 
+void * test(void * vargp) 
+{  
+    int connfd = *((int *)vargp);
+    free(vargp);
+    pthread_detach(pthread_self()); 
+    size_t n;
+
+    char* resolved_name = malloc(sizeof(char)*100);
+    char* domain_name =malloc(sizeof(char)*100);
+    strcpy(domain_name, "google.com");
+    hostname_to_ip(domain_name, resolved_name);
+    printf("%s\n",resolved_name);
+
+
+}
 /* thread routine */
 void * thread(void * vargp) 
 {  
-
-    struct Thread_object *thread_object;
-    thread_object = vargp;
-
-
     int connfd = *((int *)vargp);
     free(vargp);
-    printf("global_google in thread address %p\n", &global_string );
-    //int connfd = thread_object->connfdp;
-
     pthread_detach(pthread_self()); 
     size_t n;
-  
-    char request[MAXLINE];
 
+    //various string vars needed. All declared with malloc so they go on heap. 
+    char* ip_add = malloc(sizeof(char)*MAXBUF);
+    char* resolved_name = malloc(sizeof(char)*MAXBUF);  
+    char* request = malloc(sizeof(char)*MAXBUF);
+    char* request_type = malloc(sizeof(char)*MAXBUF);
+    char* http_packet = malloc(sizeof(char) *MAXBUF);
+    char* request_header_token = malloc(sizeof(char) *MAXBUF);
+    char* domain_name = malloc(sizeof(char)*MAXBUF);
+    char* host_name = malloc(sizeof(char)*MAXBUF);
 
-    //read from browser
-    char *request_header;
-    request_header = (char *)malloc(sizeof(char) *100);
+    FILE *fp;
+
+//---------------critical section --------------------
+    pthread_mutex_lock(file_lock);
+    fp = fopen("cached_domains","wa");
+
+    if(fp == NULL){
+        printf("File not found!\n");
+    }
+    pthread_mutex_unlock(file_lock);
+//------------critical section --------------------
     n = read(connfd, request, MAXLINE);
 
-    if(n< 0){
+    if(n < 0){
         printf("Bad connection\n");
     }
 
     //copy packet info before parsing
-    char *http_packet;
-    http_packet = (char *)malloc(sizeof(char) *100);
-    strcpy(http_packet, request);
+    strcpy(http_packet,request);
     
-    //get first line of http request
-    //gives string <request type> </wherever> <HTTP/1.1>    
-    request_header = strtok(request, "\n");  
-    char *request_header_token;
-    request_header_token = (char *)malloc(sizeof(char) *100);
-    request_header_token = strtok(request_header," ");
+    //gets first element of http packet
+    request_type = strtok(request, " ");      
 
     //nested if to check if GET request 
-    if(strcmp(request_header_token, "GET") == 0){
-
-        printf("http packet is \n%s\n",http_packet );
-
-        //parse string further
-        char *domain_name;
-        domain_name = (char *)malloc(sizeof(char) *100);
+    if(strcmp(request_type, "GET") == 0){
+        
+        //gets next element in http request
         domain_name = strtok(NULL, " ");
 
-        getaddrinfo(domain_name, NULL, NULL, &headresult);
+        host_name = strtok(domain_name, "http://");
 
-        printf("%s\n",domain_name );
+        int dns_ret = hostname_to_ip(host_name, resolved_name);
+        if(dns_ret == 0 ){
+            printf("writing to file\n");
+//---------------critical section --------------------
+//
+            pthread_mutex_lock(file_lock);
+            fputs(host_name, fp);
+            fputs(",", fp);
+            fputs(resolved_name, fp);
+
+            pthread_mutex_unlock(file_lock);
+//---------------critical section --------------------
+        }
+        printf("%s\n",resolved_name );
+
+        fclose(fp);
 
         return NULL;
     }//nested if
@@ -272,3 +304,33 @@ int dnslookup(const char* hostname, char* firstIPstr, int maxSize){
 
     return UTIL_SUCCESS;
 }//dns lookup
+
+
+//https://www.binarytides.com/hostname-to-ip-address-c-sockets-linux/
+int hostname_to_ip(char *hostname , char *ip)
+{
+    int sockfd;  
+    struct addrinfo hints, *servinfo, *p;
+    struct sockaddr_in *h;
+    int rv;
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC; // use AF_INET6 to force IPv6
+    hints.ai_socktype = SOCK_STREAM;
+
+    if ( (rv = getaddrinfo( hostname , "http" , &hints , &servinfo)) != 0) 
+    {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+        return 1;
+    }
+
+    // loop through all the results and connect to the first we can
+    for(p = servinfo; p != NULL; p = p->ai_next) 
+    {
+        h = (struct sockaddr_in *) p->ai_addr;
+        strcpy(ip , inet_ntoa( h->sin_addr ) );
+    }
+    
+    freeaddrinfo(servinfo); // all done with this structure
+    return 0;
+}
