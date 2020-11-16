@@ -60,19 +60,12 @@ int main(int argc, char **argv)
     //initialize thread_object
     struct Thread_object thread_object;
     thread_object.file_lock = file_lock;
-    //thread_object.cached = cached;
-
-    thread_object.cached = fopen("cached_domains.txt", "wa");
-    fputs("htrifdjkfdshfdkjshkjte?\n", thread_object.cached);
-    fputs("RUNFDBGHJBGDJH12kjte?\n", thread_object.cached);
-    fclose(thread_object.cached);
+    thread_object.cached = cached;
    /* thread_object.cached = fopen("cached_domains.txt", "wa");
     fseek(thread_object.cached, 0, SEEK_END);
     fputs("Hey testjfkljlking", thread_object.cached);
     fclose(thread_object.cached);*/
-    
-    printf("cached file is %s\n",thread_object.cached );
-    printf("listening on port %d\n", port);
+    printf("Listening on port %d\n", port);
     while (1) {    
     connfdp = malloc(sizeof(int));
     thread_object.connfdp = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
@@ -132,9 +125,7 @@ void * thread(void * vargp)
     int connfd = thread_object->connfdp;
     pthread_detach(pthread_self()); 
     size_t n;
-    printf("cached file is %s \n",thread_object->cached );
 
-    fputs("HEY FDUCK YOU", thread_object->cached);
     //various string vars needed. All declared with malloc so they go on heap. 
     char* ip_add = malloc(sizeof(char)*MAXBUF);
     char* resolved_name = malloc(sizeof(char)*MAXBUF);  
@@ -165,23 +156,37 @@ void * thread(void * vargp)
 
         host_name = strtok(domain_name, "http://");
 
-        int dns_ret = hostname_to_ip(host_name, resolved_name);
-        if(dns_ret == 0 ){
-            printf("writing to file\n");
-//---------------critical section --------------------
+        //-------CRITICAL SECTION------ lock is good in if and else
+        pthread_mutex_lock(thread_object->file_lock);
+        thread_object->cached = fopen(host_name, "r");
+        
+        //if host_name is not saved as a file, we have to do dns lookup
+        if( thread_object->cached == NULL){
+            printf("File not found\n");
 
-            pthread_mutex_lock(thread_object->file_lock);
+            int dns_ret = hostname_to_ip(host_name, resolved_name);
+            printf("%s\n",resolved_name);
+            if(dns_ret == 0 ){
+                printf("Saving address to file\n");
+            
+                thread_object->cached = fopen(host_name, "w");
 
-            fputs(host_name, thread_object->cached);
-            fputs(",", thread_object->cached);
-            fputs(resolved_name, thread_object->cached);
-            fputs("\n", thread_object->cached);
+                fputs(resolved_name, thread_object->cached);
+                fputs("\n", thread_object->cached);
 
+                fclose(thread_object->cached);
+                pthread_mutex_unlock(thread_object->file_lock);
+            //---------------critical section --------------------
+            }//dns_ret if
+        }//do dns lookup if
+        //file exists
+        else{
+            fscanf(thread_object->cached, "%s", resolved_name);
+            printf("resolved from file is %s\n", resolved_name);
+            fclose(thread_object->cached);
             pthread_mutex_unlock(thread_object->file_lock);
-//---------------critical section --------------------
+            
         }
-        printf("%s\n",resolved_name );
-
         return NULL;
     }//nested if
 
