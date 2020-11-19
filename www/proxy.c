@@ -27,7 +27,7 @@ struct Thread_object{
 
 int main(int argc, char **argv) 
 {
-    int listenfd, *connfdp, port, clientlen=sizeof(struct sockaddr_in);
+    int listenfd, port, clientlen=sizeof(struct sockaddr_in);
     struct sockaddr_in clientaddr;
     pthread_t tid; 
     pthread_mutex_t* file_lock;
@@ -65,9 +65,9 @@ int main(int argc, char **argv)
     fclose(thread_object.cached);*/
     printf("Listening on port %d\n", port);
     while (1) {    
-        connfdp = malloc(sizeof(int));
+        //connfdp = malloc(sizeof(int));
         //thread_object.connfdp = connfdp;
-        thread_object.connfdp = (int*)accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
+        thread_object.connfdp = (intptr_t*)accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
         pthread_create(&tid, NULL, thread, (void *)&thread_object);
         //pthread_create(&tid, NULL, test, (void *)&thread_object);
     }//while(1)
@@ -124,9 +124,9 @@ void * thread(void * vargp)
     struct Thread_object *thread_object;
 
     //thread_object is pointer to thread_obj
-    thread_object = (int*)vargp;
+    thread_object = (struct Thread_object*)vargp;
 
-    int connfd = thread_object->connfdp;
+    int connfd = (int)thread_object->connfdp;
 
     pthread_detach(pthread_self()); 
     
@@ -143,7 +143,7 @@ void * thread(void * vargp)
     char* http_response = malloc(sizeof(char)*MAXBUF);
     char* http_response_copy = malloc(sizeof(char)*MAXBUF);
     FILE* fp;
-    size_t n;
+    int n;
     n = read(connfd, request, MAXLINE);
 
     if(n < 0){
@@ -215,24 +215,24 @@ void * thread(void * vargp)
 
         if(check_addr < 0){
             printf("Error building address\n");
-            return -1;
+            return NULL;
         }
         else{
             if((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
             { 
                 printf("\n Socket creation error \n"); 
-                return -1; 
+                return NULL; 
             } 
             if(connect(sock, (struct sockaddr *)serv_addr, sizeof(struct sockaddr_in)) < 0) 
                 { 
                     printf("\nConnection Failed \n"); 
-                    return -1; 
+                    return NULL; 
                 }
             int n;
             n = write(sock, http_packet, sizeof(char)*strlen(http_packet));
             if(n<0){
                 printf("Error writing\n");
-                return -1;
+                return NULL;
             }
             printf("wrote %d bytes\n", n);
             int bytes_read;
@@ -249,7 +249,7 @@ void * thread(void * vargp)
             printf("read %d bytes\n",bytes_read);
             printf("http respnse was \n%s\n",http_response);
             int m;
-            printf("len of response : \n%d\n",strlen(http_response));
+            printf("len of response : \n%ld\n",strlen(http_response));
             printf("http response: \n%s\n\n",http_response);
             m = write(connfd, http_response, sizeof(char)*strlen(http_response));
             printf("wrote %d bytes\n",m);
@@ -270,7 +270,6 @@ void * thread(void * vargp)
         free(http_response);
         free(http_response_copy);
 
-        pthread_exit(pthread_self());
         return NULL;
     }//terminating else
   }//thread  
@@ -294,7 +293,7 @@ int build_server_addr(struct sockaddr_in* serv_addr, char * ip_add){
 
     //https://www.gta.ufrj.br/ensino/eel878/sockets/sockaddr_inman.html
     //converts IP to correct format
-    if(inet_aton(ip_add, &serv_addr->sin_addr.s_addr) ==0){
+    if(inet_aton(ip_add, (struct in_addr* )&serv_addr->sin_addr.s_addr) ==0){
         return -1;
     }
     return 1;
