@@ -21,7 +21,6 @@ void * test(void * vargp);
 int hostname_to_ip(char *hostname , char *ip);
 int build_server_addr(struct sockaddr_in* serv_addr, char * ip_add);
 struct Thread_object{
-    FILE* cached;
     pthread_mutex_t* file_lock;
     int* connfdp;
 };
@@ -32,9 +31,12 @@ int main(int argc, char **argv)
     struct sockaddr_in clientaddr;
     pthread_t tid; 
     pthread_mutex_t* file_lock;
-    FILE *cached;
     file_lock = malloc(sizeof(pthread_mutex_t));
+    //char* ip_add;
+    //ip_add = gethostbyname("netsys.cs.colorado.edu/");
+    //printf("resolved : %s", hostname_to_ip("netsys.cs.colorado.edu/", ip_add));
 
+    //printf("%s\n",ip_add );
    /* cached = fopen("cached_domains.txt", "w");
     if(cached == NULL){
         printf("File not found!\n");
@@ -57,7 +59,6 @@ int main(int argc, char **argv)
     //initialize thread_object
     struct Thread_object thread_object;
     thread_object.file_lock = file_lock;
-    thread_object.cached = cached;
    /* thread_object.cached = fopen("cached_domains.txt", "wa");
     fseek(thread_object.cached, 0, SEEK_END);
     fputs("Hey testjfkljlking", thread_object.cached);
@@ -65,7 +66,8 @@ int main(int argc, char **argv)
     printf("Listening on port %d\n", port);
     while (1) {    
         connfdp = malloc(sizeof(int));
-        thread_object.connfdp = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
+        //thread_object.connfdp = connfdp;
+        thread_object.connfdp = (int*)accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
         pthread_create(&tid, NULL, thread, (void *)&thread_object);
         //pthread_create(&tid, NULL, test, (void *)&thread_object);
     }//while(1)
@@ -92,48 +94,56 @@ int main(int argc, char **argv)
     }*/
 
 
-void * test(void * vargp) 
+/*void * test(void * vargp) 
 {  
 
     struct Thread_object *thread_object;
     thread_object = vargp;
-
     int connfd = thread_object->connfdp;
-
-    
+    printf("In test func\n");
+        char* request = malloc(sizeof(char)*MAXBUF);
     pthread_detach(pthread_self()); 
     size_t n;
-
+    size_t m;
+    n = read(connfd, request, MAXLINE);
+    printf("read %d bytes \n",n);
+    printf("request is %s\n",request);
     char* resolved_name = malloc(sizeof(char)*MAXBUF);
-    resolved_name = "HTTP/1.1 500 Internal Server Error\r\nContent-Type:text/plain\r\nContent-Length:10\r\n\r\n<p>Does this print</p>";
+    resolved_name = "HTTP/1.1 400 Internal Server Error\r\nContent-Type:text/plain\r\nContent-Length:10\r\n\r\n<p>Does this print</p>";
 
-    //write(connfd, resolved_name, sizeof(char)*strlen(resolved_name));
+    m = write(connfd, resolved_name, sizeof(char)*strlen(resolved_name));
 
-}
+    printf("worte %d bytes\n",m);
+    return NULL;
+}*/
 
 /* thread routine */
 void * thread(void * vargp) 
 {  
-    
+    //pointer to struct
     struct Thread_object *thread_object;
-    thread_object = vargp;
+
+    //thread_object is pointer to thread_obj
+    thread_object = (int*)vargp;
 
     int connfd = thread_object->connfdp;
+
     pthread_detach(pthread_self()); 
-    size_t n;
+    
 
     //various string vars needed. All declared with malloc so they go on heap. 
-    char* ip_add = malloc(sizeof(char)*MAXBUF);
+    //char* ip_add = malloc(sizeof(char)*MAXBUF);
     char* resolved_name = malloc(sizeof(char)*MAXBUF);  
     char* request = malloc(sizeof(char)*MAXBUF);
     char* request_type = malloc(sizeof(char)*MAXBUF);
     char* http_packet = malloc(sizeof(char) *MAXBUF);
-    char* request_header_token = malloc(sizeof(char) *MAXBUF);
+    //char* request_header_token = malloc(sizeof(char) *MAXBUF);
     char* domain_name = malloc(sizeof(char)*MAXBUF);
     char* host_name = malloc(sizeof(char)*MAXBUF);
     char* http_response = malloc(sizeof(char)*MAXBUF);
     char* http_response_copy = malloc(sizeof(char)*MAXBUF);
-
+    FILE* fp;
+    size_t n;
     n = read(connfd, request, MAXLINE);
 
     if(n < 0){
@@ -142,24 +152,31 @@ void * thread(void * vargp)
 
     //copy packet info before parsing
     strcpy(http_packet,request);
+
     
     //gets first element of http packet
     request_type = strtok(request, " ");      
-
     //nested if to check if GET request 
     if(strcmp(request_type, "GET") == 0){
         
         //gets next element in http request
         domain_name = strtok(NULL, " ");
-
+        
+        printf("%s\n",domain_name );
         host_name = strtok(domain_name, "http://");
+        printf("%s\n",host_name );
 
-        //-------CRITICAL SECTION------ lock is good in if and else
+
+        //free old pointers
+        /*free(request);
+        free(domain_name);
+        free(request_type);*/
+        //---- ---CRITICAL SECTION------ lock is good in if and else
         pthread_mutex_lock(thread_object->file_lock);
-        thread_object->cached = fopen(host_name, "r");
+        fp = fopen(host_name, "r");
         
         //if host_name is not saved as a file, we have to do dns lookup
-        if( thread_object->cached == NULL){
+        if( fp == NULL){
             printf("File not found\n");
 
             int dns_ret = hostname_to_ip(host_name, resolved_name);
@@ -167,21 +184,21 @@ void * thread(void * vargp)
             if(dns_ret == 0 ){
                 printf("Saving address to file\n");
             
-                thread_object->cached = fopen(host_name, "w");
+                fp = fopen(host_name, "w");
 
-                fputs(resolved_name, thread_object->cached);
-                fputs("\n", thread_object->cached);
+                fputs(resolved_name, fp);
+                fputs("\n", fp);
 
-                fclose(thread_object->cached);
+                fclose(fp);
                 pthread_mutex_unlock(thread_object->file_lock);
             //---------------critical section --------------------
             }//dns_ret if
         }//do dns lookup if
         //file exists
         else{
-            fscanf(thread_object->cached, "%s", resolved_name);
+            fscanf(fp, "%s", resolved_name);
             printf("resolved from file is %s\n", resolved_name);
-            fclose(thread_object->cached);
+            fclose(fp);
             pthread_mutex_unlock(thread_object->file_lock);
 
         }
@@ -190,14 +207,13 @@ void * thread(void * vargp)
         //DONE WITH DNS CACHE
         
         struct sockaddr_in* serv_addr = malloc(sizeof(struct sockaddr_in));
-        int* sock = malloc(sizeof(int));
-        *sock = 0;
-        int* check_addr = malloc(sizeof(int));
+        int sock;
+        int check_addr; 
 
         //takes pointer to sockaddr_in and ip_addr as string
-        *check_addr = build_server_addr(serv_addr, resolved_name);
+        check_addr = build_server_addr(serv_addr, resolved_name);
 
-        if(*check_addr < 0){
+        if(check_addr < 0){
             printf("Error building address\n");
             return -1;
         }
@@ -212,26 +228,31 @@ void * thread(void * vargp)
                     printf("\nConnection Failed \n"); 
                     return -1; 
                 }
-            int* n =malloc(sizeof(int));
-            *n = write(sock, http_packet, sizeof(char)*strlen(http_packet));
+            int n;
+            n = write(sock, http_packet, sizeof(char)*strlen(http_packet));
             if(n<0){
                 printf("Error writing\n");
                 return -1;
             }
-            printf("wrote %d bytes\n",*n);
-            int* ret = malloc(sizeof(int));
-            int* i = malloc(sizeof(int));
-            *i =0;
-            while(*ret = read(sock, http_response, sizeof(char)*MAXBUF) >0){
+            printf("wrote %d bytes\n", n);
+            int bytes_read;
+            bytes_read = read(sock, http_response, sizeof(char)*MAXBUF);
+           /* while(*ret = read(sock, http_response, sizeof(char)*MAXBUF) >0){
                 printf("read %d bytes\n",*ret);
                 *i = *i + 1;
                 printf("value of i is %d\n",*i);
                 printf("RESPONSE IS:\n%s\n",http_response);
                 strcpy(http_response,http_response_copy);
                 bzero(http_response, sizeof(char)*MAXBUF);
-            }//while
-            printf("read %d bytes\n",*ret);
-            printf("http respnse was \n%s\n",http_response_copy);
+            }//while*/
+
+            printf("read %d bytes\n",bytes_read);
+            printf("http respnse was \n%s\n",http_response);
+            int m;
+            printf("len of response : \n%d\n",strlen(http_response));
+            printf("http response: \n%s\n\n",http_response);
+            m = write(connfd, http_response, sizeof(char)*strlen(http_response));
+            printf("wrote %d bytes\n",m);
             //write(connfd, http_response, sizeof(char)*strlen(http_response));
             return NULL;        
     }//if address was built right else
@@ -241,6 +262,15 @@ void * thread(void * vargp)
     //not a GET request, bye
     else{
         printf("Proxy only handles GET. Sorry\n");
+        free(resolved_name);
+        free(request);
+        free(http_packet);
+        free(domain_name);
+        free(host_name);
+        free(http_response);
+        free(http_response_copy);
+
+        pthread_exit(pthread_self());
         return NULL;
     }//terminating else
   }//thread  
@@ -267,7 +297,7 @@ int build_server_addr(struct sockaddr_in* serv_addr, char * ip_add){
     if(inet_aton(ip_add, &serv_addr->sin_addr.s_addr) ==0){
         return -1;
     }
-
+    return 1;
 }
 
 
@@ -364,7 +394,7 @@ int open_listenfd(int port)
 //https://www.binarytides.com/hostname-to-ip-address-c-sockets-linux/
 int hostname_to_ip(char *hostname , char *ip)
 {
-    int sockfd;  
+    //int sockfd;  
     struct addrinfo hints, *servinfo, *p;
     struct sockaddr_in *h;
     int rv;
