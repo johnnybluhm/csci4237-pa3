@@ -20,6 +20,7 @@ int dnslookup(const char* hostname, char* firstIPstr, int maxSize);
 void * test(void * vargp);
 int hostname_to_ip(char *hostname , char *ip);
 int build_server_addr(struct sockaddr_in* serv_addr, char * ip_add);
+
 struct Thread_object{
     pthread_mutex_t* file_lock;
     int* connfdp;
@@ -32,16 +33,6 @@ int main(int argc, char **argv)
     pthread_t tid; 
     pthread_mutex_t* file_lock;
     file_lock = malloc(sizeof(pthread_mutex_t));
-   /* char* ip_add = malloc(sizeof(char)*MAXBUF);
-    //ip_add = gethostbyname("netsys.cs.colorado.edu/");
-    hostname_to_ip("netsys.cs.colorado.edu", ip_add);
-    printf("resolved : %s", ip_add);*/
-
-    //printf("%s\n",ip_add );
-   /* cached = fopen("cached_domains.txt", "w");
-    if(cached == NULL){
-        printf("File not found!\n");
-    }*/
 
     //initialize file_lock
     if (pthread_mutex_init(file_lock, NULL) != 0) { 
@@ -60,14 +51,9 @@ int main(int argc, char **argv)
     //initialize thread_object
     struct Thread_object thread_object;
     thread_object.file_lock = file_lock;
-   /* thread_object.cached = fopen("cached_domains.txt", "wa");
-    fseek(thread_object.cached, 0, SEEK_END);
-    fputs("Hey testjfkljlking", thread_object.cached);
-    fclose(thread_object.cached);*/
+
     printf("Listening on port %d\n", port);
     while (1) {    
-        //connfdp = malloc(sizeof(int));
-        //thread_object.connfdp = connfdp;
         thread_object.connfdp = (intptr_t*)accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
         pthread_create(&tid, NULL, thread, (void *)&thread_object);
         //pthread_create(&tid, NULL, test, (void *)&thread_object);
@@ -108,20 +94,23 @@ void * thread(void * vargp)
 
     int connfd = (int)thread_object->connfdp;
 
-    pthread_detach(pthread_self()); 
-    
+    pthread_detach(pthread_self());     
 
     //various string vars needed. All declared with malloc so they go on heap. 
-    //char* ip_add = malloc(sizeof(char)*MAXBUF);
     char* resolved_name = malloc(sizeof(char)*MAXBUF);  
+    char* domain_name = malloc(sizeof(char)*MAXBUF);  
     char* request = malloc(sizeof(char)*MAXBUF);
     char* request_type = malloc(sizeof(char)*MAXBUF);
     char* http_packet = malloc(sizeof(char) *MAXBUF);
     char* request_header = malloc(sizeof(char) *MAXBUF);
     char* host_name = malloc(sizeof(char)*MAXBUF);
     char* http_response = malloc(sizeof(char)*MAXBUF);
+    char* ip = malloc(sizeof(char)*MAXBUF);
+    char* page = malloc(sizeof(char)*MAXBUF);
     FILE* fp;
     int n;
+    int* port;
+    int succ_parsing;
     n = read(connfd, request, MAXLINE);
 
     if(n < 0){
@@ -138,17 +127,17 @@ void * thread(void * vargp)
     //nested if to check if GET request 
     if(strcmp(request_type, "GET") == 0){
         
-        //gets next element in http request
-        //domain_name = strtok(NULL, " ");
-        //sscanf(domain_name, "http://%[^/]", host_name);
+        //https://stackoverflow.com/questions/726122/best-ways-of-parsing-a-url-using-c
+        // Parsing the tmp_source char*
+        if (sscanf(request, "http://%99[^:]:%i/%199[^\n]", ip, &port, page) == 3) { succ_parsing = 1;}
+        else if (sscanf(request, "http://%99[^/]/%199[^\n]", ip, page) == 2) { succ_parsing = 1;}
+        else if (sscanf(request, "http://%99[^:]:%i[^\n]", ip, &port) == 2) { succ_parsing = 1;}
+        else if (sscanf(request, "http://%99[^\n]", ip) == 1) { succ_parsing = 1;}
+        //sscanf(request_header, "http://%99%", domain_name);
+        printf("domain name is %s port is %d page is %s \n", ip, port, page );
         sscanf(request_header, "%*[^/]%*[/]%[^/]", host_name);
         printf("hostbamne is %s\n",host_name );
 
-
-        //free old pointers
-        /*free(request);
-        free(domain_name);
-        free(request_type);*/
         //---- ---CRITICAL SECTION------ lock is good in if and else
         pthread_mutex_lock(thread_object->file_lock);
         fp = fopen(host_name, "r");
@@ -181,8 +170,6 @@ void * thread(void * vargp)
             pthread_mutex_unlock(thread_object->file_lock);
 
         }
-
-
         //DONE WITH DNS CACHE
         
         struct sockaddr_in* serv_addr = malloc(sizeof(struct sockaddr_in));
@@ -217,7 +204,7 @@ void * thread(void * vargp)
 
             while(1){
             int bytes_read;
-            //memset(http_response, 0, sizeof(char)*strlen(http_response)); 
+            memset(http_response, 0, sizeof(char)*strlen(http_response)); 
             bytes_read = read(sock, http_response, sizeof(char)*MAXBUF);
            /* while(*ret = read(sock, http_response, sizeof(char)*MAXBUF) >0){
                 printf("read %d bytes\n",*ret);
@@ -252,7 +239,8 @@ void * thread(void * vargp)
         free(http_packet);
         free(host_name);
         free(http_response);
-            return NULL;        
+
+        return NULL;        
     }//if address was built right else
 
     }//nested if
@@ -265,7 +253,6 @@ void * thread(void * vargp)
         free(http_packet);
         free(host_name);
         free(http_response);
-
 
         return NULL;
     }//terminating else
