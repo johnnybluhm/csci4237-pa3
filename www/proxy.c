@@ -32,9 +32,10 @@ int main(int argc, char **argv)
     pthread_t tid; 
     pthread_mutex_t* file_lock;
     file_lock = malloc(sizeof(pthread_mutex_t));
-    //char* ip_add;
+   /* char* ip_add = malloc(sizeof(char)*MAXBUF);
     //ip_add = gethostbyname("netsys.cs.colorado.edu/");
-    //printf("resolved : %s", hostname_to_ip("netsys.cs.colorado.edu/", ip_add));
+    hostname_to_ip("netsys.cs.colorado.edu", ip_add);
+    printf("resolved : %s", ip_add);*/
 
     //printf("%s\n",ip_add );
    /* cached = fopen("cached_domains.txt", "w");
@@ -161,10 +162,10 @@ void * thread(void * vargp)
         
         //gets next element in http request
         domain_name = strtok(NULL, " ");
-        
-        printf("%s\n",domain_name );
-        host_name = strtok(domain_name, "http://");
-        printf("%s\n",host_name );
+        //sscanf(domain_name, "http://%[^/]", host_name);
+        sscanf(domain_name, "%*[^/]%*[/]%[^/]", host_name);
+        printf("domain_name is %s\n",domain_name );
+        printf("host name is %s\n",host_name );
 
 
         //free old pointers
@@ -180,6 +181,7 @@ void * thread(void * vargp)
             printf("File not found\n");
 
             int dns_ret = hostname_to_ip(host_name, resolved_name);
+
             printf("%s\n",resolved_name);
             if(dns_ret == 0 ){
                 printf("Saving address to file\n");
@@ -247,10 +249,7 @@ void * thread(void * vargp)
             }//while*/
 
             printf("read %d bytes\n",bytes_read);
-            printf("http respnse was \n%s\n",http_response);
             int m;
-            printf("len of response : \n%ld\n",strlen(http_response));
-            printf("http response: \n%s\n\n",http_response);
             m = write(connfd, http_response, sizeof(char)*strlen(http_response));
             printf("wrote %d bytes\n",m);
             //write(connfd, http_response, sizeof(char)*strlen(http_response));
@@ -418,3 +417,4 @@ int hostname_to_ip(char *hostname , char *ip)
     freeaddrinfo(servinfo); // all done with this structure
     return 0;
 }
+
