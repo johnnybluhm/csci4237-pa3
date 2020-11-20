@@ -74,27 +74,6 @@ int main(int argc, char **argv)
     }//while(1)
 }//main
 
-
-
-
-
-
-   /* 
-    char * resolved_name = malloc(sizeof(char)*MAXBUF);
-    hostname_to_ip("google.com", resolved_name);
-    printf("%s\n",resolved_name );
-
-   while (1) {    
-    //prepare thread object to be sent to thread
-    struct Thread_object thread_obj;
-    thread_obj.ip_addr = (char *)malloc(sizeof(char) *100);
-    thread_obj.connfdp = malloc(sizeof(int));
-    thread_obj.connfdp = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
-
-    pthread_create(&tid, NULL, thread, (void *)&thread_obj);
-    }*/
-
-
 /*void * test(void * vargp) 
 {  
 
@@ -118,7 +97,7 @@ int main(int argc, char **argv)
     return NULL;
 }*/
 
-/* thread routine */
+/* thread subroutine */
 void * thread(void * vargp) 
 {  
     //pointer to struct
@@ -138,34 +117,32 @@ void * thread(void * vargp)
     char* request = malloc(sizeof(char)*MAXBUF);
     char* request_type = malloc(sizeof(char)*MAXBUF);
     char* http_packet = malloc(sizeof(char) *MAXBUF);
-    //char* request_header_token = malloc(sizeof(char) *MAXBUF);
-    char* domain_name = malloc(sizeof(char)*MAXBUF);
+    char* request_header = malloc(sizeof(char) *MAXBUF);
     char* host_name = malloc(sizeof(char)*MAXBUF);
     char* http_response = malloc(sizeof(char)*MAXBUF);
-    char* http_response_copy = malloc(sizeof(char)*MAXBUF);
     FILE* fp;
     int n;
     n = read(connfd, request, MAXLINE);
 
     if(n < 0){
         printf("Bad connection\n");
+        return NULL;
     }
 
-    //copy packet info before parsing
-    strcpy(http_packet,request);
+    sscanf(request, "%[^\n]", request_header);
+    printf("%s\n",request_header);
+    sscanf(request, "%s", request_type);
 
-    
-    //gets first element of http packet
-    request_type = strtok(request, " ");      
+    strcpy(http_packet,request);
+   
     //nested if to check if GET request 
     if(strcmp(request_type, "GET") == 0){
         
         //gets next element in http request
-        domain_name = strtok(NULL, " ");
+        //domain_name = strtok(NULL, " ");
         //sscanf(domain_name, "http://%[^/]", host_name);
-        sscanf(domain_name, "%*[^/]%*[/]%[^/]", host_name);
-        printf("domain_name is %s\n",domain_name );
-        printf("host name is %s\n",host_name );
+        sscanf(request_header, "%*[^/]%*[/]%[^/]", host_name);
+        printf("hostbamne is %s\n",host_name );
 
 
         //free old pointers
@@ -237,7 +214,10 @@ void * thread(void * vargp)
                 return NULL;
             }
             printf("wrote %d bytes\n", n);
+
+            while(1){
             int bytes_read;
+            //memset(http_response, 0, sizeof(char)*strlen(http_response)); 
             bytes_read = read(sock, http_response, sizeof(char)*MAXBUF);
            /* while(*ret = read(sock, http_response, sizeof(char)*MAXBUF) >0){
                 printf("read %d bytes\n",*ret);
@@ -247,12 +227,31 @@ void * thread(void * vargp)
                 strcpy(http_response,http_response_copy);
                 bzero(http_response, sizeof(char)*MAXBUF);
             }//while*/
-
+            if(bytes_read < 0){
+                printf("Error reading from network socket.\n");
+                return NULL;
+            }
             printf("read %d bytes\n",bytes_read);
             int m;
-            m = write(connfd, http_response, sizeof(char)*strlen(http_response));
-            printf("wrote %d bytes\n",m);
-            //write(connfd, http_response, sizeof(char)*strlen(http_response));
+            if(bytes_read> 0){
+                m = write(connfd, http_response, sizeof(char)*strlen(http_response));
+                if(m < 0){
+                    printf("Error writing back to client\n");
+                    return NULL;
+                }
+                printf("wrote %d bytes\n",m);
+            }
+
+            if(bytes_read == 0){
+                //exit loop
+                break;
+            }
+        }//forever while
+        free(resolved_name);
+        free(request);
+        free(http_packet);
+        free(host_name);
+        free(http_response);
             return NULL;        
     }//if address was built right else
 
@@ -264,10 +263,9 @@ void * thread(void * vargp)
         free(resolved_name);
         free(request);
         free(http_packet);
-        free(domain_name);
         free(host_name);
         free(http_response);
-        free(http_response_copy);
+
 
         return NULL;
     }//terminating else
@@ -298,38 +296,6 @@ int build_server_addr(struct sockaddr_in* serv_addr, char * ip_add){
     return 1;
 }
 
-
-//https://www.geeksforgeeks.org/socket-programming-cc/
-//creates socket to send stuff over internet. 
-/*int create_send_socket(char* ip_add, char* http_packet)
-{
-
-    struct sockaddr_in serv_addr;
-    int sock = 0, valread;
-
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
-    { 
-        printf("\n Socket creation error \n"); 
-        return -1; 
-    }//if
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(80);
-
-    //https://www.gta.ufrj.br/ensino/eel878/sockets/sockaddr_inman.html
-    //converts IP to correct format
-    inet_aton(ip_add, &serv_addr.sin_addr.s_addr);
-
-    if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(struct sockaddr_in)) < 0){
-        printf("\nConnection failed\n");
-        return -1;
-
-    }
-
-
-}//create_send_socket*/
-
-
-
 int open_listenfd(int port) 
 {
     int listenfd, optval=1;
@@ -358,36 +324,6 @@ int open_listenfd(int port)
         return -1;
     return listenfd;
 } /* end open_listenfd */
-
-
-
-/*int socket_connect(char *host, in_port_t port){
-    struct hostent *hp;
-    struct sockaddr_in addr;
-    int on = 1, sock;     
-
-    if((hp = gethostbyname(host)) == NULL){
-        herror("gethostbyname");
-        exit(1);
-    }
-    copy(hp->h_addr, &addr.sin_addr, hp->h_length);
-    addr.sin_port = htons(port);
-    addr.sin_family = AF_INET;
-    sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (const char *)&on, sizeof(int));
-
-    if(sock == -1){
-        perror("setsockopt");
-        exit(1);
-    }
-    
-    if(connect(sock, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) == -1){
-        perror("connect");
-        exit(1);
-
-    }
-    return sock;
-}*/
 
 //https://www.binarytides.com/hostname-to-ip-address-c-sockets-linux/
 int hostname_to_ip(char *hostname , char *ip)
