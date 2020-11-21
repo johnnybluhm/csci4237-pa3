@@ -108,6 +108,7 @@ void * thread(void * vargp)
     char* http_response = malloc(sizeof(char)*MAXBUF);
     char* ip = malloc(sizeof(char)*MAXBUF);
     char* page = malloc(sizeof(char)*MAXBUF);
+    char* token = malloc(sizeof(char)*MAXBUF);
     FILE* fp;
     int n;
     int* port;
@@ -205,7 +206,6 @@ void * thread(void * vargp)
                 }
             int n;
 
-            printf("HTTP PACKET IS \n%s\n",http_packet );
             n = write(sock, http_packet, strlen(http_packet));
             if(n<0){
                 printf("Error writing\n");
@@ -217,15 +217,23 @@ void * thread(void * vargp)
             int bytes_read;
             memset(http_response, 0, MAXBUF); 
             bytes_read = read(sock, http_response, MAXBUF);
-            printf("HTTP RESPONSE:\n%s\n",http_response);
             if(bytes_read < 0){
                 printf("Error reading from network socket.\n");
                 return NULL;
             }
             printf("read %d bytes from server\n",bytes_read);
+
+            //need to parse http_response and look for content type,
+            //if its an image, handle accordingly. 
+            
+
+
+
+
+
             int m;
             if(bytes_read> 0){
-                m = write(thread_object->connfdp, http_response, strlen(http_response));
+                m = write(connfd, http_response, strlen(http_response));
                 /*if(m < 0){
                     printf("Error writing back to client\n");
                     return NULL;
@@ -268,13 +276,7 @@ void * thread(void * vargp)
 
  
 
-HELPER FUNCTIONS BELOW
-
- 
-
-
- */
-
+HELPER FUNCTIONS BELOW  */
 int build_server_addr(struct sockaddr_in* serv_addr, char * ip_add){
     printf("Building address\n");
     serv_addr->sin_family = AF_INET;
