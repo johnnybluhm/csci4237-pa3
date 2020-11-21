@@ -56,32 +56,8 @@ int main(int argc, char **argv)
     while (1) {    
         thread_object.connfdp = (intptr_t*)accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
         pthread_create(&tid, NULL, thread, (void *)&thread_object);
-        //pthread_create(&tid, NULL, test, (void *)&thread_object);
     }//while(1)
 }//main
-
-/*void * test(void * vargp) 
-{  
-
-    struct Thread_object *thread_object;
-    thread_object = vargp;
-    int connfd = thread_object->connfdp;
-    printf("In test func\n");
-        char* request = malloc(sizeof(char)*MAXBUF);
-    pthread_detach(pthread_self()); 
-    size_t n;
-    size_t m;
-    n = read(connfd, request, MAXLINE);
-    printf("read %d bytes \n",n);
-    printf("request is %s\n",request);
-    char* resolved_name = malloc(sizeof(char)*MAXBUF);
-    resolved_name = "HTTP/1.1 400 Internal Server Error\r\nContent-Type:text/plain\r\nContent-Length:10\r\n\r\n<p>Does this print</p>";
-
-    m = write(connfd, resolved_name, sizeof(char)*strlen(resolved_name));
-
-    printf("worte %d bytes\n",m);
-    return NULL;
-}*/
 
 /* thread subroutine */
 void * thread(void * vargp) 
@@ -100,15 +76,17 @@ void * thread(void * vargp)
     char* resolved_name = malloc(sizeof(char)*MAXBUF);  
     char* url_raw = malloc(sizeof(char)*MAXBUF);  
     char* save_ptr = malloc(sizeof(char)*MAXBUF); 
+    char* save_ptr2 = malloc(sizeof(char)*MAXBUF); 
     char* request = malloc(sizeof(char)*MAXBUF);
     char* request_type = malloc(sizeof(char)*MAXBUF);
     char* http_packet = malloc(sizeof(char) *MAXBUF);
     char* request_header = malloc(sizeof(char) *MAXBUF);
     char* host_name = malloc(sizeof(char)*MAXBUF);
     char* http_response = malloc(sizeof(char)*MAXBUF);
+    char* http_response_copy = malloc(sizeof(char)*MAXBUF);
     char* ip = malloc(sizeof(char)*MAXBUF);
     char* page = malloc(sizeof(char)*MAXBUF);
-    char* token = malloc(sizeof(char)*MAXBUF);
+    char* content_type = malloc(sizeof(char)*MAXBUF);
     FILE* fp;
     int n;
     int* port;
@@ -129,9 +107,9 @@ void * thread(void * vargp)
     //nested if to check if GET request 
     if(strcmp(request_type, "GET") == 0){              
         
-        //got to use twice to get second element seperated by space
-        strtok_r(request," ",save_ptr);
-        url_raw = strtok_r(NULL," ",save_ptr);
+        //got touse twice to get second element seperated by space
+        strtok_r(request," ", &save_ptr); 
+        url_raw = strtok_r(NULL," ", &save_ptr);
 
         //https://stackoverflow.com/questions/726122/best-ways-of-parsing-a-url-using-c
         //if (sscanf(url_raw, "http://%99[^:]:%i/%199[^\n]", ip, &port, page) == 3) { succ_parsing = 1;}
@@ -213,46 +191,60 @@ void * thread(void * vargp)
             }
             printf("wrote %d bytes to server\n", n);
 
+            //if page has a dot in it
+            if(strstr(page, ".") != NULL){
+                content_type = strtok_r(page, ".", &save_ptr2);
+            }
+            if(content_type !=NULL){
+                content_type = strtok_r(NULL, ".",&save_ptr2);
+            }
+        
             while(1){
-            int bytes_read;
-            memset(http_response, 0, MAXBUF); 
-            bytes_read = read(sock, http_response, MAXBUF);
-            if(bytes_read < 0){
-                printf("Error reading from network socket.\n");
-                return NULL;
-            }
-            printf("read %d bytes from server\n",bytes_read);
-
-            //need to parse http_response and look for content type,
-            //if its an image, handle accordingly. 
-            
-
-
-
-
-
-            int m;
-            if(bytes_read> 0){
-                m = write(connfd, http_response, strlen(http_response));
-                /*if(m < 0){
-                    printf("Error writing back to client\n");
+                int bytes_read;
+                int m;
+                memset(http_response, 0, MAXBUF); 
+                bytes_read = read(sock, http_response, MAXBUF);
+                if(bytes_read < 0){
+                    printf("Error reading from network socket.\n");
+                    close(sock);
                     return NULL;
-                }*/
-                printf("wrote %d bytes back to client\n",m);
-            }
+                }
+                printf("Read %d bytes from server\n", bytes_read);
+                //need to parse http_response and look for content type,
+                //if its an image, handle accordingly. 
+                if(content_type != NULL){
+                    if(     strcmp(content_type, "png") == 0 ||
+                            strcmp(content_type, "jpg") == 0 ||
+                            strcmp(content_type, "ico") == 0 ||
+                            strcmp(content_type, "gif") == 0 
+                    ){
+                        m = write(connfd, http_response, MAXBUF);
+                        printf("wrote %d bytes back to client\n",m);
+                    }    
 
-            if(bytes_read == 0){                
-                //exit loop
-                //close(sock);
-                break;
-            }
-        }//forever while
+                }//content type not null          
+                else if(bytes_read> 0){
+                    m = write(connfd, http_response, MAXBUF);
+                    if(m < 0){
+                        printf("Error writing back to client\n");
+                        close(sock);
+                        return NULL;
+                    }
+                    printf("wrote %d bytes back to client\n",m);
+                }
+
+                if(bytes_read == 0){                
+                    //exit loop
+                    close(sock);
+                    break;
+                }
+            }//forever while
         free(resolved_name);
         free(request);
         free(http_packet);
         free(host_name);
         free(http_response);
-
+        close(connfd);
         return NULL;        
     }//if address was built right else
 
@@ -266,7 +258,7 @@ void * thread(void * vargp)
         free(http_packet);
         free(host_name);
         free(http_response);
-
+        close(connfd);
         return NULL;
     }//terminating else
   }//thread  
@@ -276,10 +268,16 @@ void * thread(void * vargp)
 
  
 
-HELPER FUNCTIONS BELOW  */
+HELPER FUNCTIONS BELOW  
+
+
+
+
+
+*/
 int build_server_addr(struct sockaddr_in* serv_addr, char * ip_add){
     printf("Building address\n");
-    serv_addr->sin_family = AF_INET;
+    serv_addr->sin_family = AF_INET; //ipV4
     serv_addr->sin_port = htons(80);
 
     //https://www.gta.ufrj.br/ensino/eel878/sockets/sockaddr_inman.html
