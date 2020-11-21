@@ -235,7 +235,6 @@ void * thread(void * vargp)
 
                 if(bytes_read == 0){                
                     //exit loop
-                    close(sock);
                     break;
                 }
             }//forever while
