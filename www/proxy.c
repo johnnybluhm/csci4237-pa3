@@ -95,6 +95,8 @@ void * thread(void * vargp)
 
     if(n < 0){
         printf("Bad connection\n");
+        pthread_exit(pthread_self);
+        close(connfd);
         return NULL;
     }
 
@@ -169,17 +171,20 @@ void * thread(void * vargp)
 
         if(check_addr < 0){
             printf("Error building address\n");
+            pthread_exit(pthread_self);
             return NULL;
         }
         else{
             if((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
             { 
                 printf("\n Socket creation error \n"); 
+                pthread_exit(pthread_self);
                 return NULL; 
             } 
             if(connect(sock, (struct sockaddr *)serv_addr, sizeof(struct sockaddr_in)) < 0) 
                 { 
                     printf("\nConnection Failed \n"); 
+                    pthread_exit(pthread_self);
                     return NULL; 
                 }
             int n;
@@ -187,6 +192,9 @@ void * thread(void * vargp)
             n = write(sock, http_packet, strlen(http_packet));
             if(n<0){
                 printf("Error writing\n");
+                close(sock);
+                close(connfd);
+                pthread_exit(pthread_self);
                 return NULL;
             }
             printf("wrote %d bytes to server\n", n);
@@ -202,41 +210,50 @@ void * thread(void * vargp)
             while(1){
                 int bytes_read;
                 int m;
-                memset(http_response, 0, MAXBUF); 
+                //memset(http_response, 0, MAXBUF); 
                 bytes_read = read(sock, http_response, MAXBUF);
                 if(bytes_read < 0){
                     printf("Error reading from network socket.\n");
                     close(sock);
+                    close(connfd);
+                    pthread_exit(pthread_self);
                     return NULL;
                 }
                 printf("Read %d bytes from server\n", bytes_read);
                 //need to parse http_response and look for content type,
                 //if its an image, handle accordingly. 
-                if(content_type != NULL){
+                if(bytes_read == 0){                
+                    //exit loop
+                    printf("Exiting program\n");
+                    
+                    break;
+                }
+               /* if(content_type != NULL){
                     if(     strcmp(content_type, "png") == 0 ||
                             strcmp(content_type, "jpg") == 0 ||
                             strcmp(content_type, "ico") == 0 ||
                             strcmp(content_type, "gif") == 0 
                     ){
-                        m = write(connfd, http_response, MAXBUF);
+                        printf("Handling image\n");
+                        m = write(connfd, http_response, bytes_read);
+                        //m = write(connfd, http_response, bytes_read - strlen(http_response));
                         printf("wrote %d bytes back to client\n",m);
                     }    
 
-                }//content type not null          
-                else if(bytes_read> 0){
-                    m = write(connfd, http_response, MAXBUF);
+                }//content type not null */      
+                if(bytes_read> 0){
+                    m = write(connfd, http_response, bytes_read);
                     if(m < 0){
                         printf("Error writing back to client\n");
                         close(sock);
+                        close(connfd);
+                        pthread_exit(pthread_self);
                         return NULL;
                     }
                     printf("wrote %d bytes back to client\n",m);
                 }
 
-                if(bytes_read == 0){                
-                    //exit loop
-                    break;
-                }
+
             }//forever while
         free(resolved_name);
         free(request);
@@ -244,6 +261,7 @@ void * thread(void * vargp)
         free(host_name);
         free(http_response);
         close(connfd);
+        pthread_exit(pthread_self);
         return NULL;        
     }//if address was built right else
 
@@ -258,6 +276,7 @@ void * thread(void * vargp)
         free(host_name);
         free(http_response);
         close(connfd);
+        pthread_exit(pthread_self);
         return NULL;
     }//terminating else
   }//thread  
