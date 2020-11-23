@@ -1,6 +1,9 @@
 To compile program type make in the www directory
 
 to run: 
-	./server <port number>
-server should respond with listening on port <port number>
-access files through browser localhost:<portnumber>/<desired file>
+	./proxy <port number>
+proxy should respond with listening on port <port number>
+
+Transfers can get stopped due to receiving http packets after recieving http header and data. So proxy can handle individual requests no problem, but gets stopped when loading multiple. It is this request:
+	http://ajax.googleapis.com/ajax/libs/jquery/1.4/jquery.min.js
+that gives a packet at the end. Which then makes the program not exit therefore stalling all other communication. The packet is sends is a get favicon.ico. DNS caching is functional. Uses files as a hash table. 

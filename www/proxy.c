@@ -20,7 +20,10 @@ int dnslookup(const char* hostname, char* firstIPstr, int maxSize);
 void * test(void * vargp);
 int hostname_to_ip(char *hostname , char *ip);
 int build_server_addr(struct sockaddr_in* serv_addr, char * ip_add);
-
+void send_error(int connfd, char * error_msg);
+char* itoa(int value, char* result, int base);
+int hash(char *str);
+char* ultostr(unsigned long value, char *ptr, int base);
 struct Thread_object{
     pthread_mutex_t* file_lock;
     int* connfdp;
@@ -33,7 +36,6 @@ int main(int argc, char **argv)
     pthread_t tid; 
     pthread_mutex_t* file_lock;
     file_lock = malloc(sizeof(pthread_mutex_t));
-
     //initialize file_lock
     if (pthread_mutex_init(file_lock, NULL) != 0) { 
         printf("\n mutex init has failed\n"); 
@@ -87,7 +89,12 @@ void * thread(void * vargp)
     char* ip = malloc(sizeof(char)*MAXBUF);
     char* page = malloc(sizeof(char)*MAXBUF);
     char* content_type = malloc(sizeof(char)*MAXBUF);
+    char* file_ext = malloc(sizeof(char)*MAXBUF);
+    char* error_msg = malloc(sizeof(char)*MAXBUF);
+    char* hash_string = malloc(sizeof(char)*MAXBUF);
+
     FILE* fp;
+    FILE* page_cache;
     int n;
     int* port;
     int succ_parsing;
@@ -120,23 +127,29 @@ void * thread(void * vargp)
         else if (sscanf(url_raw, "http://%99[^/]", ip) == 1) { succ_parsing = 1;}
         else{ printf("Error parsing URL\n"); return NULL;}
 
+        if(page[0] == '\0'){
+            printf("no page\n");
+        }
+        else{
+            file_ext = strtok_r(page, ".", save_ptr);
+            file_ext = strtok_r(NULL, ".", save_ptr);
+        }        
 
-        //sscanf(request_header, "http://%99%", domain_name);
-        //printf("domain name is %s port is %d page is %s \n", ip, port, page );
-        //sscanf(request_header, "%*[^/]%*[/]%[^/]", host_name);
-        //printf("hostname is %s\n",host_name );
+        if(strcmp("http://netsys.cs.colorado.edu/favicon.ico", url_raw)==0){
+            printf("FUCK THIS REQ\n");
+            return NULL;
+
+        }
 
         //---- ---CRITICAL SECTION------ lock is good in if and else
         pthread_mutex_lock(thread_object->file_lock);
-        fp = fopen(host_name, "r");
+        fp = fopen(ip, "r");
         
         //if host_name is not saved as a file, we have to do dns lookup
         if( fp == NULL){
             printf("File not found\n");
 
             int dns_ret = hostname_to_ip(ip, resolved_name);
-
-            printf("resolved name is %s\n",resolved_name);
 
             if(dns_ret == 0 ){
                 printf("Saving address to file\n");
@@ -154,23 +167,83 @@ void * thread(void * vargp)
         //file exists
         else{
             fscanf(fp, "%s", resolved_name);
-            printf("resolved from file is %s\n", resolved_name);
             fclose(fp);
             pthread_mutex_unlock(thread_object->file_lock);
-
+            //---------------critical section --------------------
         }
         //DONE WITH DNS CACHE
+        
+        //PAGE CACHE 
+        int hash_val;
+        hash_val = hash(url_raw);
+        itoa(hash_val, hash_string, 10);   
+        printf("url raw is %s\n",url_raw );
+        printf("hash sting is %s\n",hash_string);     
+
+        //---- BEGIN---CRITICAL SECTION------ lock is good in if and else
+        pthread_mutex_lock(thread_object->file_lock);
+        page_cache = fopen(hash_string, "r");
+
+        if(page_cache == NULL){
+            //have to go to server
+            printf("Page not cached\n");
+            //fclose(page_cache);
+            pthread_mutex_unlock(thread_object->file_lock);
+        }
+        else{
+            //cached file exists
+            printf("Page is cached\n");
+            //check if it is image
+            if(strcmp(file_ext,"png") == 0 || 
+                strcmp(file_ext,"gif") == 0 || 
+                strcmp(file_ext,"jpg") == 0 ||
+                strcmp(file_ext,"ico") == 0
+                )
+            {
+
+                //do nothing if it is image
+            }
+            else{
+            //write contents of file to client 
+            char c;
+            int i =0;
+            printf("Writing client from file\n");
+            c = fgetc(page_cache);
+            while(c != EOF){
+                http_response[i]=c;
+                c = fgetc(page_cache);
+                i++;
+            }     
+            write(connfd, http_response, strlen(http_response));
+            fclose(page_cache);
+            printf("Succesful cache transfer\n");            
+            pthread_mutex_unlock(thread_object->file_lock);
+            close(connfd);
+            pthread_exit(pthread_self);
+            return NULL;
+            }
+        }
+
+        //---------------END critical section --------------------
+
+        //DONE WITH page cache
+
+
+
+
+
         
         struct sockaddr_in* serv_addr = malloc(sizeof(struct sockaddr_in));
         int sock;
         int check_addr; 
 
         //takes pointer to sockaddr_in and ip_addr as string
-        printf("resolved_name is %s\n", resolved_name);
         check_addr = build_server_addr(serv_addr, resolved_name);
 
         if(check_addr < 0){
             printf("Error building address\n");
+            error_msg = "Error building address\n";
+            send_error(connfd, error_msg);
             pthread_exit(pthread_self);
             return NULL;
         }
@@ -178,6 +251,8 @@ void * thread(void * vargp)
             if((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
             { 
                 printf("\n Socket creation error \n"); 
+                error_msg = "Socket creation error \n";
+                send_error(connfd, error_msg);
                 pthread_exit(pthread_self);
                 return NULL; 
             } 
@@ -185,10 +260,13 @@ void * thread(void * vargp)
                 { 
                     printf("\nConnection Failed \n"); 
                     pthread_exit(pthread_self);
+                    error_msg = "Connection failed\n";
+                    send_error(connfd, error_msg);
                     return NULL; 
                 }
             int n;
 
+            //write initial get request to server
             n = write(sock, http_packet, strlen(http_packet));
             if(n<0){
                 printf("Error writing\n");
@@ -199,18 +277,22 @@ void * thread(void * vargp)
             }
             printf("wrote %d bytes to server\n", n);
 
-            //if page has a dot in it
-            if(strstr(page, ".") != NULL){
-                content_type = strtok_r(page, ".", &save_ptr2);
+            //---- ---CRITICAL SECTION----------------------
+            pthread_mutex_lock(thread_object->file_lock);
+
+            page_cache = fopen(hash_string, "a");
+
+            if(page_cache == NULL){
+                printf("Error creating cache file");
+                pthread_exit(pthread_self);
+                return NULL;
             }
-            if(content_type !=NULL){
-                content_type = strtok_r(NULL, ".",&save_ptr2);
-            }
-        
+
+            printf("Transferring data\n");
             while(1){
                 int bytes_read;
                 int m;
-                //memset(http_response, 0, MAXBUF); 
+                memset(http_response, 0, MAXBUF); 
                 bytes_read = read(sock, http_response, MAXBUF);
                 if(bytes_read < 0){
                     printf("Error reading from network socket.\n");
@@ -220,27 +302,18 @@ void * thread(void * vargp)
                     return NULL;
                 }
                 printf("Read %d bytes from server\n", bytes_read);
-                //need to parse http_response and look for content type,
-                //if its an image, handle accordingly. 
+
                 if(bytes_read == 0){                
                     //exit loop
                     printf("Exiting program\n");
-                    
+                    fclose(page_cache);
+                    pthread_mutex_unlock(thread_object->file_lock);
                     break;
                 }
-               /* if(content_type != NULL){
-                    if(     strcmp(content_type, "png") == 0 ||
-                            strcmp(content_type, "jpg") == 0 ||
-                            strcmp(content_type, "ico") == 0 ||
-                            strcmp(content_type, "gif") == 0 
-                    ){
-                        printf("Handling image\n");
-                        m = write(connfd, http_response, bytes_read);
-                        //m = write(connfd, http_response, bytes_read - strlen(http_response));
-                        printf("wrote %d bytes back to client\n",m);
-                    }    
 
-                }//content type not null */      
+                //save results to file before sending to client 
+                fputs(http_response, page_cache);
+
                 if(bytes_read> 0){
                     m = write(connfd, http_response, bytes_read);
                     if(m < 0){
@@ -269,7 +342,9 @@ void * thread(void * vargp)
 
     //not a GET request, bye
     else{
-        printf("Proxy only handles GET. Sorry\n");
+        //printf("Proxy only handles GET. Sorry\n");
+        error_msg = "Bad request";
+        send_error(connfd, error_msg);
         free(resolved_name);
         free(request);
         free(http_packet);
@@ -365,3 +440,101 @@ int hostname_to_ip(char *hostname , char *ip)
     return 0;
 }
 
+void send_error(int connfd, char * error_msg)
+{
+
+    char buf[MAXLINE]; 
+    char httpmsg[]="HTTP/1.1 500 Internal Server Error\r\nContent-Type:text/plain\r\nContent-Length:";
+    char after_content_length[]="\r\n\r\n";
+    char content_length[MAXLINE];
+    
+    //convert file size int to string
+    itoa(strlen(error_msg), content_length, 10);
+    
+    strcat(httpmsg, content_length);
+    strcat(httpmsg, after_content_length);    
+
+    //add file contents to http header
+    strcat(httpmsg, error_msg);
+    //printf("server returning a http message with the following content.\n%s\n",httpmsg);
+    write(connfd, httpmsg, strlen(httpmsg));
+    
+}
+
+char* itoa(int value, char* result, int base) {
+    // check that the base if valid
+    if (base < 2 || base > 36) { *result = '\0'; return result; }
+
+    char* ptr = result, *ptr1 = result, tmp_char;
+    int tmp_value;
+
+    do {
+        tmp_value = value;
+        value /= base;
+        *ptr++ = "zyxwvutsrqponmlkjihgfedcba9876543210123456789abcdefghijklmnopqrstuvwxyz" [35 + (tmp_value - value * base)];
+    } while ( value );
+
+    // Apply negative sign
+    if (tmp_value < 0) *ptr++ = '-';
+    *ptr-- = '\0';
+    while(ptr1 < ptr) {
+        tmp_char = *ptr;
+        *ptr--= *ptr1;
+        *ptr1++ = tmp_char;
+    }
+    return result;
+}
+
+//https://stackoverflow.com/questions/7666509/hash-function-for-string
+int hash(char *str)
+{
+    int hash = 5381;
+    int c;
+
+    while (c = *str++)
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+
+    return hash;
+}
+
+char* ultostr(unsigned long value, char *ptr, int base)
+{
+  unsigned long t = 0, res = 0;
+  unsigned long tmp = value;
+  int count = 0;
+
+  if (NULL == ptr)
+  {
+    return NULL;
+  }
+
+  if (tmp == 0)
+  {
+    count++;
+  }
+
+  while(tmp > 0)
+  {
+    tmp = tmp/base;
+    count++;
+  }
+
+  ptr += count;
+
+  *ptr = '\0';
+
+  do
+  {
+    res = value - base * (t = value / base);
+    if (res < 10)
+    {
+      * -- ptr = '0' + res;
+    }
+    else if ((res >= 10) && (res < 16))
+    {
+        * --ptr = 'A' - 10 + res;
+    }
+  } while ((value = t) != 0);
+
+  return(ptr);
+}
