@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <time.h>
 
 #define MAXLINE  8192  /* max text line length */
 #define MAXBUF   8192  /* max I/O buffer size */
@@ -27,11 +28,13 @@ char* ultostr(unsigned long value, char *ptr, int base);
 struct Thread_object{
     pthread_mutex_t* file_lock;
     int* connfdp;
+    int* timeout;
+    time_t start_time;
 };
 
 int main(int argc, char **argv) 
 {
-    int listenfd, port, clientlen=sizeof(struct sockaddr_in);
+    int listenfd, timeout, port, clientlen=sizeof(struct sockaddr_in);
     struct sockaddr_in clientaddr;
     pthread_t tid; 
     pthread_mutex_t* file_lock;
@@ -42,17 +45,22 @@ int main(int argc, char **argv)
         return 1; 
     } 
 
-    if (argc != 2) {
+    if (argc != 3) {
 	fprintf(stderr, "usage: %s <port>\n", argv[0]);
 	exit(0);
     }
+    time_t start_time;
+    start_time = time(NULL);
     port = atoi(argv[1]);
+    timeout = atoi(argv[2]);
 
     listenfd = open_listenfd(port);
 
     //initialize thread_object
     struct Thread_object thread_object;
     thread_object.file_lock = file_lock;
+    thread_object.timeout = &timeout;
+    thread_object.start_time = start_time;
 
     printf("Listening on port %d\n", port);
     while (1) {    
@@ -69,9 +77,11 @@ void * thread(void * vargp)
 
     //thread_object is pointer to thread_obj
     thread_object = (struct Thread_object*)vargp;
-
+    time_t start_time, transfer_time, thread_start;
+    start_time = thread_object->start_time;
+    thread_start = time(NULL);
     int connfd = (int)thread_object->connfdp;
-
+    int timeout = *(thread_object->timeout);
     pthread_detach(pthread_self());     
 
     //various string vars needed. All declared with malloc so they go on heap. 
@@ -128,7 +138,7 @@ void * thread(void * vargp)
         else{ printf("Error parsing URL\n"); return NULL;}
 
         if(page[0] == '\0'){
-            printf("no page\n");
+            strcpy(page, ip);
         }
         else{
             file_ext = strtok_r(page, ".", save_ptr);
@@ -136,7 +146,7 @@ void * thread(void * vargp)
         }        
 
         if(strcmp("http://netsys.cs.colorado.edu/favicon.ico", url_raw)==0){
-            printf("FUCK THIS REQ\n");
+            //annoygin request
             return NULL;
 
         }
@@ -166,71 +176,78 @@ void * thread(void * vargp)
         }//do dns lookup if
         //file exists
         else{
-            fscanf(fp, "%s", resolved_name);
-            fclose(fp);
-            pthread_mutex_unlock(thread_object->file_lock);
-            //---------------critical section --------------------
-        }
-        //DONE WITH DNS CACHE
-        
-        //PAGE CACHE 
-        int hash_val;
-        hash_val = hash(url_raw);
-        itoa(hash_val, hash_string, 10);   
-        printf("url raw is %s\n",url_raw );
-        printf("hash sting is %s\n",hash_string);     
-
-        //---- BEGIN---CRITICAL SECTION------ lock is good in if and else
-        pthread_mutex_lock(thread_object->file_lock);
-        page_cache = fopen(hash_string, "r");
-
-        if(page_cache == NULL){
-            //have to go to server
-            printf("Page not cached\n");
-            //fclose(page_cache);
-            pthread_mutex_unlock(thread_object->file_lock);
-        }
-        else{
-            //cached file exists
-            printf("Page is cached\n");
-            //check if it is image
-            if(strcmp(file_ext,"png") == 0 || 
-                strcmp(file_ext,"gif") == 0 || 
-                strcmp(file_ext,"jpg") == 0 ||
-                strcmp(file_ext,"ico") == 0
-                )
-            {
-
-                //do nothing if it is image
+                fscanf(fp, "%s", resolved_name);
+                fclose(fp);
+                pthread_mutex_unlock(thread_object->file_lock);
+                //---------------critical section --------------------
             }
-            else{
-            //write contents of file to client 
-            char c;
-            int i =0;
-            printf("Writing client from file\n");
-            c = fgetc(page_cache);
-            while(c != EOF){
-                http_response[i]=c;
-                c = fgetc(page_cache);
-                i++;
-            }     
-            write(connfd, http_response, strlen(http_response));
-            fclose(page_cache);
-            printf("Succesful cache transfer\n");            
-            pthread_mutex_unlock(thread_object->file_lock);
-            close(connfd);
-            pthread_exit(pthread_self);
-            return NULL;
-            }
-        }
+            //DONE WITH DNS CACHE
+            
 
-        //---------------END critical section --------------------
+            if((thread_start-start_time) > timeout ){
+
+                //need hash to create file for writing still
+                int hash_val;
+                hash_val = hash(url_raw);
+                itoa(hash_val, hash_string, 10);
+            }
+            else {
+                //PAGE CACHE 
+                int hash_val;
+                hash_val = hash(url_raw);
+                itoa(hash_val, hash_string, 10);
+
+
+                printf("url raw is %s\n",url_raw );
+                printf("hash sting is %s\n",hash_string);     
+
+                //---- BEGIN---CRITICAL SECTION------ lock is good in if and else
+                pthread_mutex_lock(thread_object->file_lock);
+                page_cache = fopen(hash_string, "r");
+
+                if(page_cache == NULL){
+                    //have to go to server
+                    printf("Page not cached\n");
+                    //fclose(page_cache);
+                    pthread_mutex_unlock(thread_object->file_lock);
+                }
+                else{
+                    //cached file exists
+                    printf("Page is cached\n");
+                    //check if it is image
+                    if(strcmp(file_ext,"png") == 0 || 
+                        strcmp(file_ext,"gif") == 0 || 
+                        strcmp(file_ext,"jpg") == 0 ||
+                        strcmp(file_ext,"ico") == 0
+                        )
+                    {
+
+                        //do nothing if it is image
+                    }
+                    else{
+                    //write contents of file to client 
+                    char c;
+                    int i =0;
+                    printf("Writing client from file\n");
+                    c = fgetc(page_cache);
+                    while(c != EOF){
+                        http_response[i]=c;
+                        c = fgetc(page_cache);
+                        i++;
+                    }     
+                    write(connfd, http_response, strlen(http_response));
+                    fclose(page_cache);
+                    printf("Succesful cache transfer\n");            
+                    pthread_mutex_unlock(thread_object->file_lock);
+                    close(connfd);
+                    pthread_exit(pthread_self);
+                    return NULL;
+                    }
+                }
+                //---------------END critical section --------------------
+            }//outer else
 
         //DONE WITH page cache
-
-
-
-
 
         
         struct sockaddr_in* serv_addr = malloc(sizeof(struct sockaddr_in));
@@ -278,12 +295,13 @@ void * thread(void * vargp)
             printf("wrote %d bytes to server\n", n);
 
             //---- ---CRITICAL SECTION----------------------
-            pthread_mutex_lock(thread_object->file_lock);
+            //pthread_mutex_lock(thread_object->file_lock);
 
             page_cache = fopen(hash_string, "a");
 
             if(page_cache == NULL){
                 printf("Error creating cache file");
+                pthread_mutex_unlock(thread_object->file_lock);
                 pthread_exit(pthread_self);
                 return NULL;
             }
@@ -307,7 +325,7 @@ void * thread(void * vargp)
                     //exit loop
                     printf("Exiting program\n");
                     fclose(page_cache);
-                    pthread_mutex_unlock(thread_object->file_lock);
+                    //pthread_mutex_unlock(thread_object->file_lock);
                     break;
                 }
 
