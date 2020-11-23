@@ -24,6 +24,7 @@ int build_server_addr(struct sockaddr_in* serv_addr, char * ip_add);
 void send_error(int connfd, char * error_msg);
 char* itoa(int value, char* result, int base);
 int hash(char *str);
+void send_black(int connfd, char * error_msg);
 char* ultostr(unsigned long value, char *ptr, int base);
 struct Thread_object{
     pthread_mutex_t* file_lock;
@@ -77,7 +78,7 @@ void * thread(void * vargp)
 
     //thread_object is pointer to thread_obj
     thread_object = (struct Thread_object*)vargp;
-    time_t start_time, transfer_time, thread_start;
+    time_t start_time, transfer_start, thread_start, transfer_time, cache_time;
     start_time = thread_object->start_time;
     thread_start = time(NULL);
     int connfd = (int)thread_object->connfdp;
@@ -102,9 +103,12 @@ void * thread(void * vargp)
     char* file_ext = malloc(sizeof(char)*MAXBUF);
     char* error_msg = malloc(sizeof(char)*MAXBUF);
     char* hash_string = malloc(sizeof(char)*MAXBUF);
+    char* black_list_string = malloc(sizeof(char)*MAXBUF);
+    char* is_black_listed = malloc(sizeof(char)*MAXBUF);
 
     FILE* fp;
     FILE* page_cache;
+    FILE* black_list;
     int n;
     int* port;
     int succ_parsing;
@@ -137,6 +141,31 @@ void * thread(void * vargp)
         else if (sscanf(url_raw, "http://%99[^/]", ip) == 1) { succ_parsing = 1;}
         else{ printf("Error parsing URL\n"); return NULL;}
 
+        char s;
+        int j =0;
+
+        pthread_mutex_lock(thread_object->file_lock);
+
+        black_list = fopen("blacklist", "r");
+
+        if(black_list == NULL){
+            printf("File not found!\n");
+            return NULL;
+        }
+        s = fgetc(black_list);
+        while(s != EOF){
+            black_list_string[j]=s;
+            s = fgetc(black_list);
+            j++;
+        }
+        is_black_listed = strstr(black_list_string, ip);
+        if(is_black_listed != NULL){
+            error_msg = "URL is black listed\n";
+            send_black(connfd, error_msg);
+            close(connfd);
+            return NULL;
+        }
+        pthread_mutex_unlock(thread_object->file_lock);
         if(page[0] == '\0'){
             strcpy(page, ip);
         }
@@ -147,7 +176,7 @@ void * thread(void * vargp)
 
         if(strcmp("http://netsys.cs.colorado.edu/favicon.ico", url_raw)==0){
             //annoygin request
-            return NULL;
+            
 
         }
 
@@ -183,8 +212,8 @@ void * thread(void * vargp)
             }
             //DONE WITH DNS CACHE
             
-
-            if((thread_start-start_time) > timeout ){
+            cache_time = time(NULL);
+            if((cache_time - start_time) > timeout ){
 
                 //need hash to create file for writing still
                 int hash_val;
@@ -295,7 +324,7 @@ void * thread(void * vargp)
             printf("wrote %d bytes to server\n", n);
 
             //---- ---CRITICAL SECTION----------------------
-            //pthread_mutex_lock(thread_object->file_lock);
+            pthread_mutex_lock(thread_object->file_lock);
 
             page_cache = fopen(hash_string, "a");
 
@@ -306,10 +335,17 @@ void * thread(void * vargp)
                 return NULL;
             }
 
+            
             printf("Transferring data\n");
-            while(1){
+            transfer_start = time(NULL);
+            transfer_time = transfer_start - thread_start;
+
+            while(transfer_time < 5){
                 int bytes_read;
                 int m;
+                
+                printf("transfer time %d\n",transfer_time );
+
                 memset(http_response, 0, MAXBUF); 
                 bytes_read = read(sock, http_response, MAXBUF);
                 if(bytes_read < 0){
@@ -321,11 +357,17 @@ void * thread(void * vargp)
                 }
                 printf("Read %d bytes from server\n", bytes_read);
 
+                if(transfer_time > 10){
+                    printf("Exiting program\n");
+                    fclose(page_cache);
+                    pthread_mutex_unlock(thread_object->file_lock);
+                    break;
+                }
                 if(bytes_read == 0){                
                     //exit loop
                     printf("Exiting program\n");
                     fclose(page_cache);
-                    //pthread_mutex_unlock(thread_object->file_lock);
+                    pthread_mutex_unlock(thread_object->file_lock);
                     break;
                 }
 
@@ -333,6 +375,7 @@ void * thread(void * vargp)
                 fputs(http_response, page_cache);
 
                 if(bytes_read> 0){
+
                     m = write(connfd, http_response, bytes_read);
                     if(m < 0){
                         printf("Error writing back to client\n");
@@ -343,6 +386,8 @@ void * thread(void * vargp)
                     }
                     printf("wrote %d bytes back to client\n",m);
                 }
+                transfer_start = time(NULL);
+                transfer_time = transfer_start - thread_start;
 
 
             }//forever while
@@ -555,4 +600,25 @@ char* ultostr(unsigned long value, char *ptr, int base)
   } while ((value = t) != 0);
 
   return(ptr);
+}
+
+void send_black(int connfd, char * error_msg)
+{
+
+    char buf[MAXLINE]; 
+    char httpmsg[]="HTTP/1.1 403 Forbidden\r\nContent-Type:text/plain\r\nContent-Length:";
+    char after_content_length[]="\r\n\r\n";
+    char content_length[MAXLINE];
+    
+    //convert file size int to string
+    itoa(strlen(error_msg), content_length, 10);
+    
+    strcat(httpmsg, content_length);
+    strcat(httpmsg, after_content_length);    
+
+    //add file contents to http header
+    strcat(httpmsg, error_msg);
+    //printf("server returning a http message with the following content.\n%s\n",httpmsg);
+    write(connfd, httpmsg, strlen(httpmsg));
+    
 }
