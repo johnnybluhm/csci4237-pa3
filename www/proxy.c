@@ -9,6 +9,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <time.h>
+#include <sys/types.h>
 
 #define MAXLINE  8192  /* max text line length */
 #define MAXBUF   8192  /* max I/O buffer size */
@@ -75,7 +76,9 @@ void * thread(void * vargp)
 {  
     //pointer to struct
     struct Thread_object *thread_object;
-
+    struct timeval sock_timeout;
+    sock_timeout.tv_sec = 1;
+    sock_timeout.tv_usec = 0;
     //thread_object is pointer to thread_obj
     thread_object = (struct Thread_object*)vargp;
     time_t start_time, transfer_start, thread_start, transfer_time, cache_time;
@@ -84,7 +87,9 @@ void * thread(void * vargp)
     int connfd = (int)thread_object->connfdp;
     int timeout = *(thread_object->timeout);
     pthread_detach(pthread_self());     
-
+    
+    setsockopt (connfd, IPPROTO_TCP, SO_RCVTIMEO, (char*) &sock_timeout, sizeof (sock_timeout));
+    setsockopt (connfd, IPPROTO_TCP, SO_SNDTIMEO, (char*) &sock_timeout, sizeof (sock_timeout));
     //various string vars needed. All declared with malloc so they go on heap. 
     char* resolved_name = malloc(sizeof(char)*MAXBUF);  
     char* url_raw = malloc(sizeof(char)*MAXBUF);  
@@ -171,11 +176,14 @@ void * thread(void * vargp)
             file_ext = strtok_r(NULL, ".", save_ptr);
         }        
 
-        if(strcmp("http://netsys.cs.colorado.edu/favicon.ico", url_raw)==0){
+       /* if(strcmp("http://netsys.cs.colorado.edu/favicon.ico", url_raw)==0){
                    //annoygin request
-            
+                    error_msg= "not necessary";
+                    send_error(connfd, error_msg);
+                    close(connfd);
+                    return NULL;
 
-        }
+        }*/
 
         //---- ---CRITICAL SECTION------ lock is good in if and else
         pthread_mutex_lock(thread_object->file_lock);
@@ -309,6 +317,10 @@ void * thread(void * vargp)
                 }
             int n;
 
+
+
+            setsockopt (sock, IPPROTO_TCP, SO_RCVTIMEO, (char*) &sock_timeout, sizeof (sock_timeout));
+            setsockopt (sock, IPPROTO_TCP, SO_SNDTIMEO, (char*) &sock_timeout, sizeof (sock_timeout));
             //write initial get request to server
             n = write(sock, http_packet, strlen(http_packet));
             if(n<0){
@@ -337,6 +349,10 @@ void * thread(void * vargp)
             transfer_start = time(NULL);
             transfer_time = transfer_start - thread_start;
 
+            //https://stackoverflow.com/questions/4181784/how-to-set-socket-
+            //timeout-in-c-when-making-multiple-connections#:~:text=You%20can
+            //%20use%20the%20SO_RCVTIMEO,tv_sec%20%3D%2010%3B%20timeout.
+
             while(transfer_time < 5){
                 int bytes_read;
                 int m;
@@ -360,14 +376,8 @@ void * thread(void * vargp)
                     pthread_mutex_unlock(thread_object->file_lock);
                     break;
                 }
-                if(bytes_read == 0){                
-                    //exit loop
-                    printf("Exiting program\n");
-                    fclose(page_cache);
-                    pthread_mutex_unlock(thread_object->file_lock);
-                    break;
-                }
 
+                http_response[bytes_read] = '\0';
                 //save results to file before sending to client 
                 fputs(http_response, page_cache);
 
@@ -386,7 +396,13 @@ void * thread(void * vargp)
                 transfer_start = time(NULL);
                 transfer_time = transfer_start - thread_start;
 
-
+                if(bytes_read == 0){                
+                    //exit loop
+                    printf("Exiting program\n");
+                    fclose(page_cache);
+                    pthread_mutex_unlock(thread_object->file_lock);
+                    break;
+                }
             }//forever while
         free(resolved_name);
         free(request);
