@@ -1,9 +1,17 @@
 To compile program type make in the www directory
 
 to run: 
-	./proxy <port number>
+	./proxy <port number> <timeout value>
 proxy should respond with listening on port <port number>
 
-Transfers can get stopped due to receiving http packets after recieving http header and data. So proxy can handle individual requests no problem, but gets stopped when loading multiple. It is this request:
+Program will hang when loading netsys.cs.colorado.edu, but first half of contents are sent no issue. 
+
+Transfers can get stopped due to receiving http packets after recieving http header and data. So proxy can handle individual requests no problem, but when attempting to load netsys.cs.colorado.edu a request is made that stalls all other communication.  It is this request:
 	http://ajax.googleapis.com/ajax/libs/jquery/1.4/jquery.min.js
-that gives a packet at the end. Which then makes the program not exit therefore stalling all other communication. The packet is sends is a get favicon.ico. DNS caching is functional. Uses files as a hash table. 
+that gives a packet at the end. Which then makes the program not exit therefore stalling all other communication. The packet is sends is a get favicon.ico. All this was verified in wireshark. If I had more time I would try and solve, but I figured I needed to work on some caching and other parts of assignment. 
+
+DNS caching is functional. Uses files as a hash table. Page caching is functional for non image http packets. Timeout value is used as well. Please test this with individual pages to verify proxy at least works for individual pages. 
+
+Black list is functional, url's need the form of host name only though as I use a string variable ip to compare to. I could easily implement with raw URLs instead as I have url_raw variable. This was design choice. See premade blacklist file as example. 
+
+Error handling is functional as well, although I cannot verify if it does what assignment wanted. I send 400 Bad Request for non GETs and send 403 Forbidden for black listed site.

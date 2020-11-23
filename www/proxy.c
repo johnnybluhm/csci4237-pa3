@@ -89,17 +89,14 @@ void * thread(void * vargp)
     char* resolved_name = malloc(sizeof(char)*MAXBUF);  
     char* url_raw = malloc(sizeof(char)*MAXBUF);  
     char* save_ptr = malloc(sizeof(char)*MAXBUF); 
-    char* save_ptr2 = malloc(sizeof(char)*MAXBUF); 
     char* request = malloc(sizeof(char)*MAXBUF);
     char* request_type = malloc(sizeof(char)*MAXBUF);
     char* http_packet = malloc(sizeof(char) *MAXBUF);
     char* request_header = malloc(sizeof(char) *MAXBUF);
     char* host_name = malloc(sizeof(char)*MAXBUF);
     char* http_response = malloc(sizeof(char)*MAXBUF);
-    char* http_response_copy = malloc(sizeof(char)*MAXBUF);
     char* ip = malloc(sizeof(char)*MAXBUF);
     char* page = malloc(sizeof(char)*MAXBUF);
-    char* content_type = malloc(sizeof(char)*MAXBUF);
     char* file_ext = malloc(sizeof(char)*MAXBUF);
     char* error_msg = malloc(sizeof(char)*MAXBUF);
     char* hash_string = malloc(sizeof(char)*MAXBUF);
@@ -175,7 +172,7 @@ void * thread(void * vargp)
         }        
 
         if(strcmp("http://netsys.cs.colorado.edu/favicon.ico", url_raw)==0){
-            //annoygin request
+                   //annoygin request
             
 
         }
@@ -344,7 +341,7 @@ void * thread(void * vargp)
                 int bytes_read;
                 int m;
                 
-                printf("transfer time %d\n",transfer_time );
+                printf("transfer time %ld\n",transfer_time );
 
                 memset(http_response, 0, MAXBUF); 
                 bytes_read = read(sock, http_response, MAXBUF);
@@ -506,8 +503,7 @@ int hostname_to_ip(char *hostname , char *ip)
 void send_error(int connfd, char * error_msg)
 {
 
-    char buf[MAXLINE]; 
-    char httpmsg[]="HTTP/1.1 500 Internal Server Error\r\nContent-Type:text/plain\r\nContent-Length:";
+    char httpmsg[]="HTTP/1.1 400 Bad Request\r\nContent-Type:text/plain\r\nContent-Length:";
     char after_content_length[]="\r\n\r\n";
     char content_length[MAXLINE];
     
@@ -554,7 +550,7 @@ int hash(char *str)
     int hash = 5381;
     int c;
 
-    while (c = *str++)
+    while ((c = *str++))
         hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
 
     return hash;
@@ -605,7 +601,7 @@ char* ultostr(unsigned long value, char *ptr, int base)
 void send_black(int connfd, char * error_msg)
 {
 
-    char buf[MAXLINE]; 
+
     char httpmsg[]="HTTP/1.1 403 Forbidden\r\nContent-Type:text/plain\r\nContent-Length:";
     char after_content_length[]="\r\n\r\n";
     char content_length[MAXLINE];
